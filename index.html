@@ -14,6 +14,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<script src="./config.js"></script>
 
 <style>
 /* ═══════════════════════════════════════════════════════════
@@ -162,6 +164,48 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
 }
 .tiny:hover{background:var(--mist); color:var(--ink)}
 
+
+/* 마이크로스텝 도움 기능 */
+.step-actions{display:flex; flex-direction:column; gap:7px; align-items:flex-end}
+.tiny.feature{border-color:var(--sage); color:var(--sage-deep); background:#F6F9F7}
+.tiny.feature:hover{background:var(--mist)}
+.support-panel{
+  margin:9px 0 16px 38px; border:1px solid var(--line); border-radius:12px;
+  background:var(--surface); padding:17px 18px; box-shadow:var(--shadow)
+}
+.support-head{display:flex; justify-content:space-between; gap:12px; align-items:start}
+.support-title{font-family:'Gowun Batang',serif; font-size:20px; line-height:1.45}
+.support-desc{font-size:13.5px; color:var(--ink-soft); margin:5px 0 0}
+.support-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:15px}
+.support-choice{
+  border:1px solid var(--line); border-radius:10px; background:var(--paper); padding:12px;
+  font:inherit; text-align:left; color:var(--ink); cursor:pointer
+}
+.support-choice:hover,.support-choice[aria-pressed="true"]{border-color:var(--sage); background:var(--mist)}
+.support-choice b{display:block; font-size:13.5px; margin-bottom:3px}
+.support-choice span{display:block; font-size:11.5px; color:var(--ink-soft); line-height:1.45}
+.route-line{height:4px; background:var(--mist); border-radius:999px; margin:16px 0 7px; overflow:hidden}
+.route-line i{display:block; height:100%; width:62%; background:var(--sage)}
+.support-meta{display:flex; gap:14px; flex-wrap:wrap; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft)}
+.video-box{
+  margin-top:14px; min-height:150px; display:grid; place-items:center; border-radius:11px;
+  background:linear-gradient(145deg,#DDE5E0,#F4E7CA); border:1px solid var(--line); text-align:center
+}
+.play{
+  width:48px; height:48px; border-radius:50%; border:0; background:var(--sage-deep);
+  color:#fff; font-size:18px; cursor:pointer; box-shadow:var(--shadow)
+}
+.play-note{font-size:12.5px; color:var(--ink-soft); margin-top:8px}
+.level-chip{
+  display:inline-flex; align-items:center; gap:6px; margin-top:5px; padding:3px 8px;
+  border-radius:999px; background:var(--amber-soft); color:#76551C;
+  font-family:'IBM Plex Mono',monospace; font-size:10px
+}
+@media (max-width:620px){
+  .step-item{grid-template-columns:24px 1fr}.step-actions{grid-column:2; flex-direction:row; align-items:center}
+  .support-panel{margin-left:0}.support-grid{grid-template-columns:1fr}
+}
+
 /* 리허설 */
 .chat{
   border:1px solid var(--line); border-radius:var(--r); background:var(--surface);
@@ -258,7 +302,7 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
    4. 데이터 — 화면과 분리해서 위쪽에 모아둔다
    ═══════════════════════════════════════════════════════════ */
 
-const QUESTIONS = [
+let QUESTIONS = [
   { key:'out',   q:'최근 한 달, 집 밖으로 나간 날은 며칠쯤 될까요?',
     opts:[['0일','a'],['1–3일','b'],['4–7일','c'],['8일 이상','d']] },
   { key:'talk',  q:'요즘 다른 사람과 나누는 대화는 어느 정도인가요?',
@@ -304,6 +348,245 @@ const FALLBACK_STEPS = {
   late:    ['오늘 한 일 하나만 적어보기','늦었다는 문장을 다르게 바꿔 써보기','내일 할 아주 작은 일 하나 정하기'],
   energy:  ['물 한 잔 마시기','침대에서 3분만 앉아 있기','좋아하는 노래 한 곡 틀어두기']
 };
+
+
+/* 발표 데모용으로 검증된 마이크로스텝 묶음.
+   각 chain은 0이 가장 쉬운 단계이고, 마지막이 기본 추천 단계다. */
+let MICROSTEP_CHAINS = {
+  walk: {
+    label:'산책', feature:'route',
+    chain:[
+      '추천 산책 코스 지도만 보기',
+      '외출할 신발 준비하기',
+      '현관 앞에 30초 서 있기',
+      '건물 밖에서 1분 서 있기',
+      '집 앞 100m 걷기',
+      '사람 적은 10분 코스 걷기'
+    ],
+    why:['보기만 해도 준비가 시작돼요','밖에 나가지 않아도 되는 준비예요','문을 열 필요 없는 단계예요',
+         '바로 돌아와도 되는 짧은 노출이에요','목적지 없이 짧게 다녀와요','조용한 길을 골라 부담을 줄여요']
+  },
+  cafe: {
+    label:'카페', feature:'cafe',
+    chain:[
+      '동네 카페 목록만 보기',
+      '카페 한 곳 저장하기',
+      '인기 메뉴 하나 고르기',
+      '주문 문장 읽어보기',
+      '카페 앞까지 가기',
+      '키오스크로 음료 주문하기',
+      '직원에게 메뉴 이름 말하기'
+    ],
+    why:['방문하지 않고 정보만 봐요','선택만 해두면 다음이 쉬워져요','현장에서 고민할 일을 줄여요',
+         '실제 대화 전에 문장만 익혀요','들어가지 않고 돌아와도 돼요','대화 없이 주문할 수 있어요','한 문장만 말하면 끝나요']
+  },
+  stretch: {
+    label:'스트레칭', feature:'video',
+    chain:[
+      '스트레칭 영상 제목만 보기',
+      '영상 재생 버튼 누르기',
+      '첫 동작만 따라 하기',
+      '3분 스트레칭 따라 하기'
+    ],
+    why:['실행하지 않고 확인만 해요','재생만 하고 멈춰도 돼요','한 동작이면 충분해요','짧게 몸을 깨우는 단계예요']
+  }
+};
+
+let DEMO_STEP_PRESETS = {
+  going:[['walk',5],['stretch',3],['cafe',2]],
+  energy:[['stretch',3],['walk',2],['cafe',0]],
+  contact:[['cafe',3],['walk',4],['stretch',2]],
+  judged:[['cafe',3],['stretch',2],['walk',2]],
+  overload:[['cafe',2],['walk',0],['stretch',1]],
+  late:[['stretch',2],['walk',2],['cafe',1]]
+};
+
+let SUPPORT_DATA = {
+  route:{
+    title:'조용한 산책 코스', desc:'시연에서는 현재 위치 대신 예시 동네 데이터를 사용해요.',
+    choices:[['가장 짧은 코스','약 8분 · 550m'],['사람 적은 코스','약 12분 · 골목 위주'],['벤치 있는 코스','약 15분 · 공원 경유']]
+  },
+  cafe:{
+    title:'동네 카페 인기 메뉴', desc:'현장에서 오래 고민하지 않도록 메뉴를 미리 골라둬요.',
+    choices:[['아이스 아메리카노','4,000원 · 가장 많이 주문'],['카페라테','4,500원 · 부드러운 맛'],['유자차','4,800원 · 카페인 없음']]
+  },
+  video:{
+    title:'3분 방 안 스트레칭', desc:'첫 동작만 따라 하고 멈춰도 완료로 인정해요.', choices:[]
+  }
+};
+
+
+/* ═══════════════════════════════════════════════════════════
+   Google Sheets 콘텐츠 로더
+   - CODE_questions / CODE_microsteps / CODE_presets / CODE_support를 읽는다.
+   - config.js의 GOOGLE_SHEET_ID가 비어 있거나 로딩이 실패하면 위 기본 데이터를 쓴다.
+   ═══════════════════════════════════════════════════════════ */
+const FALLBACK_CONTENT = {
+  questions: JSON.parse(JSON.stringify(QUESTIONS)),
+  chains: JSON.parse(JSON.stringify(MICROSTEP_CHAINS)),
+  presets: JSON.parse(JSON.stringify(DEMO_STEP_PRESETS)),
+  support: JSON.parse(JSON.stringify(SUPPORT_DATA))
+};
+
+function isActive(value){
+  if(value === true || value === 1) return true;
+  return !['false','0','no','n','off',''].includes(String(value ?? '').trim().toLowerCase());
+}
+
+function sheetCsvUrl(sheetName){
+  const id = window.NUDGEON_CONFIG?.GOOGLE_SHEET_ID?.trim();
+  if(!id) throw new Error('GOOGLE_SHEET_ID가 설정되지 않았습니다.');
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}&_=${Date.now()}`;
+}
+
+async function loadCsvSheet(sheetName){
+  const response = await fetch(sheetCsvUrl(sheetName), {cache:'no-store'});
+  if(!response.ok) throw new Error(`${sheetName} 시트 요청 실패: ${response.status}`);
+  const csv = await response.text();
+  const parsed = Papa.parse(csv, {header:true, skipEmptyLines:true, dynamicTyping:true});
+  if(parsed.errors?.length) console.warn(`${sheetName} CSV 경고`, parsed.errors);
+  return parsed.data.filter(row=>Object.values(row).some(v=>String(v ?? '').trim() !== ''));
+}
+
+function buildQuestions(rows){
+  const groups = new Map();
+  rows.filter(r=>isActive(r.active)).forEach(r=>{
+    const id = String(r.question_id ?? '').trim();
+    if(!id) return;
+    if(!groups.has(id)) groups.set(id, {
+      key:id,
+      order:Number(r.question_order)||999,
+      q:String(r.question_text ?? '').trim(),
+      opts:[]
+    });
+    groups.get(id).opts.push({
+      order:Number(r.option_order)||999,
+      label:String(r.option_text ?? '').trim(),
+      value:String(r.option_value ?? '').trim()
+    });
+  });
+  return [...groups.values()]
+    .sort((a,b)=>a.order-b.order)
+    .map(q=>({key:q.key, q:q.q, opts:q.opts.sort((a,b)=>a.order-b.order).map(o=>[o.label,o.value])}))
+    .filter(q=>q.q && q.opts.length);
+}
+
+function buildMicrostepChains(rows){
+  const groups = new Map();
+  rows.filter(r=>isActive(r.active)).forEach(r=>{
+    const id=String(r.chain_id ?? '').trim();
+    if(!id) return;
+    if(!groups.has(id)) groups.set(id, {
+      label:String(r.chain_label ?? id).trim(),
+      feature:String(r.feature_type ?? '').trim(),
+      supportLabel:String(r.support_label ?? '').trim(),
+      steps:[]
+    });
+    groups.get(id).steps.push({
+      difficulty:Number(r.difficulty)||1,
+      title:String(r.title ?? '').trim(),
+      why:String(r.why_text ?? '').trim()
+    });
+  });
+  const result={};
+  groups.forEach((g,id)=>{
+    g.steps.sort((a,b)=>a.difficulty-b.difficulty);
+    result[id]={
+      label:g.label,
+      feature:g.feature,
+      supportLabel:g.supportLabel,
+      chain:g.steps.map(s=>s.title),
+      why:g.steps.map(s=>s.why)
+    };
+  });
+  return result;
+}
+
+function buildPresets(rows, chains){
+  const result={};
+  rows.filter(r=>isActive(r.active)).forEach(r=>{
+    const barrier=String(r.barrier_id ?? '').trim();
+    const chain=String(r.chain_id ?? '').trim();
+    if(!barrier || !chains[chain]) return;
+    const index=Math.max(0, Math.min(chains[chain].chain.length-1, (Number(r.start_difficulty)||1)-1));
+    (result[barrier] ||= []).push({order:Number(r.recommendation_order)||999, chain, index});
+  });
+  Object.keys(result).forEach(key=>{
+    result[key]=result[key].sort((a,b)=>a.order-b.order).map(x=>[x.chain,x.index]);
+  });
+  return result;
+}
+
+function buildSupport(rows){
+  const groups=new Map();
+  rows.filter(r=>isActive(r.active)).forEach(r=>{
+    const type=String(r.feature_type ?? '').trim();
+    if(!type) return;
+    if(!groups.has(type)) groups.set(type, {
+      title:String(r.feature_title ?? '').trim(),
+      desc:String(r.feature_description ?? '').trim(),
+      choices:[]
+    });
+    const choiceTitle=String(r.choice_title ?? '').trim();
+    if(choiceTitle) groups.get(type).choices.push({
+      order:Number(r.choice_order)||999,
+      title:choiceTitle,
+      detail:String(r.choice_detail ?? '').trim()
+    });
+  });
+  const result={};
+  groups.forEach((g,type)=>{
+    result[type]={title:g.title, desc:g.desc,
+      choices:g.choices.sort((a,b)=>a.order-b.order).map(c=>[c.title,c.detail])};
+  });
+  return result;
+}
+
+async function loadContentFromGoogleSheets(){
+  const id = window.NUDGEON_CONFIG?.GOOGLE_SHEET_ID?.trim();
+  if(!id){
+    console.info('Google Sheet ID가 없어 내장 fallback 데이터를 사용합니다.');
+    return false;
+  }
+  const [qRows,mRows,pRows,sRows] = await Promise.all([
+    loadCsvSheet('CODE_questions'),
+    loadCsvSheet('CODE_microsteps'),
+    loadCsvSheet('CODE_presets'),
+    loadCsvSheet('CODE_support')
+  ]);
+  const questions=buildQuestions(qRows);
+  const chains=buildMicrostepChains(mRows);
+  const presets=buildPresets(pRows,chains);
+  const support=buildSupport(sRows);
+  if(!questions.length || !Object.keys(chains).length) throw new Error('필수 CODE 시트 데이터가 비어 있습니다.');
+  QUESTIONS=questions;
+  MICROSTEP_CHAINS=chains;
+  DEMO_STEP_PRESETS=Object.keys(presets).length ? presets : FALLBACK_CONTENT.presets;
+  SUPPORT_DATA=Object.keys(support).length ? support : FALLBACK_CONTENT.support;
+  console.info('NudgeOn 콘텐츠를 Google Sheets에서 불러왔습니다.');
+  return true;
+}
+
+async function initializeApp(){
+  try{
+    await loadContentFromGoogleSheets();
+  }catch(error){
+    console.warn('Google Sheets 로딩 실패. fallback 데이터를 사용합니다.', error);
+    QUESTIONS=FALLBACK_CONTENT.questions;
+    MICROSTEP_CHAINS=FALLBACK_CONTENT.chains;
+    DEMO_STEP_PRESETS=FALLBACK_CONTENT.presets;
+    SUPPORT_DATA=FALLBACK_CONTENT.support;
+  }
+  render();
+}
+
+function createDemoSteps(barrier){
+  return (DEMO_STEP_PRESETS[barrier] || DEMO_STEP_PRESETS.going).map(([chainId,difficulty])=>{
+    const group = MICROSTEP_CHAINS[chainId];
+    return {chainId, difficulty, text:group.chain[difficulty], why:group.why[difficulty],
+            feature:group.feature, done:false, supportOpen:false, selectedSupport:0};
+  });
+}
 
 const SCENARIOS = [
   { id:'center', title:'상담센터에 처음 전화하기', who:'대학 학생상담센터 상담 접수 직원',
@@ -488,9 +771,14 @@ function vMicro(){
       <div class="step-item ${i===0?'today':''} ${s.done?'done':''}">
         <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="완료">${s.done?'✓':''}</button>
         <div><div class="step-text">${s.text}</div>
-             ${s.why?`<div class="step-why">${s.why}</div>`:''}</div>
-        <button class="tiny" data-smaller="${i}">더 작게</button>
-      </div>`).join('')}
+             ${s.why?`<div class="step-why">${s.why}</div>`:''}
+             ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
+        <div class="step-actions">
+          ${s.feature?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
+          <button class="tiny" data-smaller="${i}" ${s.chainId && s.difficulty===0?'disabled':''}>더 작게</button>
+        </div>
+      </div>
+      ${s.supportOpen?renderSupport(s,i):''}`).join('')}
   </div>
   <div class="row">
     <button class="btn" data-go="rehearsal">사람과 만나는 상황 연습해보기</button>
@@ -499,6 +787,28 @@ function vMicro(){
   <p class="note">여기에 <b>연속 달성 스트릭을 일부러 넣지 않았어요.</b> 스트릭이 끊기는 순간
   "역시 나는 못 해"가 되기 쉬운데, 고립 상태에서는 그 실패 신호 하나가 앱을 완전히 떠나게 만들거든요.
   대신 '더 작게' 버튼으로, 실패 대신 난이도를 낮추는 선택지를 뒀어요.</p>`;
+}
+
+
+function renderSupport(s,i){
+  const data = SUPPORT_DATA[s.feature];
+  if(!data) return '';
+  if(s.feature==='video'){
+    return `<div class="support-panel">
+      <div class="support-head"><div><div class="support-title">${data.title}</div><p class="support-desc">${data.desc}</p></div>
+      <button class="tiny" data-support="${i}">닫기</button></div>
+      <div class="video-box"><div><button class="play" data-play="${i}" aria-label="스트레칭 재생">▶</button>
+      <div class="play-note">어깨 돌리기 → 목 옆 늘리기 → 기지개</div></div></div>
+    </div>`;
+  }
+  return `<div class="support-panel">
+    <div class="support-head"><div><div class="support-title">${data.title}</div><p class="support-desc">${data.desc}</p></div>
+    <button class="tiny" data-support="${i}">닫기</button></div>
+    <div class="support-grid">${data.choices.map((c,j)=>`<button class="support-choice" data-choice="${i}:${j}" aria-pressed="${s.selectedSupport===j}">
+      <b>${c[0]}</b><span>${c[1]}</span></button>`).join('')}</div>
+    ${s.feature==='route'?`<div class="route-line"><i></i></div><div class="support-meta"><span>출발 · 집 앞</span><span>혼잡도 · 낮음</span><span>경사 · 거의 없음</span></div>`:''}
+    ${s.feature==='cafe'?`<div class="draft">주문 연습 · “${data.choices[s.selectedSupport||0][0]} 한 잔 주세요.”</div>`:''}
+  </div>`;
 }
 
 /* ── 03 사회적 리허설 ── */
@@ -604,6 +914,17 @@ function bind(){
     const i=+b.dataset.tick; state.micro[i].done=!state.micro[i].done; render();
   });
   stage.querySelectorAll('[data-smaller]').forEach(b=>b.onclick=()=>makeSmaller(+b.dataset.smaller));
+  stage.querySelectorAll('[data-support]').forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.support; state.micro[i].supportOpen=!state.micro[i].supportOpen; render();
+  });
+  stage.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{
+    const [i,j]=b.dataset.choice.split(':').map(Number); state.micro[i].selectedSupport=j; render();
+  });
+  stage.querySelectorAll('[data-play]').forEach(b=>b.onclick=()=>{
+    const i=+b.dataset.play; b.textContent='✓';
+    state.micro[i].why='첫 동작까지 확인했어요. 여기서 멈춰도 완료예요.';
+    setTimeout(render,450);
+  });
   stage.querySelectorAll('[data-regen]').forEach(b=>b.onclick=()=>loadSteps(true));
   stage.querySelectorAll('[data-scenario]').forEach(b=>b.onclick=()=>startScenario(b.dataset.scenario));
   stage.querySelectorAll('[data-exitsc]').forEach(b=>b.onclick=()=>{state.scenario=null; state.messages=[]; render()});
@@ -656,35 +977,30 @@ async function finishCheck(){
 
 async function loadSteps(regen=false){
   const p = state.profile;
-  state.micro = FALLBACK_STEPS[p.barrier].map(t=>({text:t,why:'',done:false}));
+  /* 발표 중 네트워크 상태와 무관하게 항상 같은 완성도 높은 데모를 보여준다. */
+  const presets = createDemoSteps(p.barrier);
+  if(regen) presets.push(presets.shift());
+  state.micro = presets;
   render();
-  try{
-    const txt = await ask(
-      [{role:'user',content:
-        `단계 Lv.${p.level}(${p.levelName}), 장벽: ${p.barrierLabel}, 바람: ${p.vision}.
-${regen?'이전과 다른 새로운 것으로 ':''}오늘 할 수 있는 행동 3개를 만들어줘.`}],
-      `너는 고립 청년에게 오늘 할 수 있는 아주 작은 행동을 설계한다.
-규칙: 실패할 수 없을 만큼 작게. 첫 번째가 가장 쉽고, 3번이 조금 더 크다.
-Lv.1~2면 집 밖으로 나가라고 하지 않는다. 각 행동은 15자 이내.
-why는 왜 이게 지금 맞는지 25자 이내 한 문장.
-JSON만 출력: {"steps":[{"text":"...","why":"..."}]}`);
-    const j = parseJSON(txt);
-    state.micro = j.steps.slice(0,3).map(s=>({text:s.text, why:s.why||'', done:false}));
-  }catch(e){ console.warn('스텝 생성 실패, 기본 목록 사용:', e); }
-  if(state.screen==='micro') render();
 }
 
 async function makeSmaller(i){
   const cur = state.micro[i];
+  if(cur.chainId){
+    const group = MICROSTEP_CHAINS[cur.chainId];
+    if(cur.difficulty===0) return;
+    cur.difficulty -= 1;
+    cur.text = group.chain[cur.difficulty];
+    cur.why = group.why[cur.difficulty];
+    cur.supportOpen = false;
+    cur.done = false;
+    render();
+    return;
+  }
+
+  /* AI가 만든 자유형 스텝에도 기존 대비 로직을 남겨둔다. */
   const original = cur.text;
-  cur.text = '더 작게 만드는 중…'; render();
-  try{
-    const txt = await ask(
-      [{role:'user',content:`"${original}" — 이걸 절반 크기의 행동으로 바꿔줘.`}],
-      `고립 청년이 부담을 느낀 행동을 더 작게 쪼갠다.
-"나가기"→"신발 신어보기"처럼 실패할 수 없는 크기로. 15자 이내. 행동 문장만 출력.`);
-    cur.text = txt.replace(/^["']|["']$/g,'');
-  }catch(e){ cur.text = original + ' — 딱 1분만'; }
+  cur.text = original + ' — 딱 1분만';
   cur.why = '부담돼서 더 작게 바꿨어요';
   render();
 }
@@ -740,7 +1056,7 @@ async function makeDraft(){
   render();
 }
 
-render();
+initializeApp();
 </script>
 </body>
 </html>
