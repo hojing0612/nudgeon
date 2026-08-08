@@ -458,6 +458,7 @@ function buildQuestions(rows){
       key:id,
       survey:(String(r.survey ?? '').trim() || 'legacy'),
       flag:String(r.flag ?? '').trim().toUpperCase(),
+      showIf:String(r.show_if ?? '').trim(),
       order:Number(r.question_order)||999,
       q:String(r.question_text ?? '').trim(),
       opts:[]
@@ -471,7 +472,7 @@ function buildQuestions(rows){
   });
   return [...groups.values()]
     .sort((a,b)=>a.order-b.order)
-    .map(q=>({key:q.key, survey:q.survey, flag:q.flag, q:q.q,
+    .map(q=>({key:q.key, survey:q.survey, flag:q.flag, showIf:q.showIf, q:q.q,
       opts:q.opts.sort((a,b)=>a.order-b.order).map(o=>[o.label,o.value,o.score])}))
     .filter(q=>q.q && q.opts.length);
 }
@@ -492,6 +493,33 @@ const BARRIER_MAP = {
   friend:'contact',   community:'contact', career:'overload', anxiety:'judged', change:'energy'
 };
 const BARRIER_FALLBACK = { hikikomori:'going', isolation:'contact', boundary:'overload' };
+
+/* show_if 형식: "h_try!=none" 또는 "h_try=many,once"
+   조건을 만족하지 않는 문항은 화면에 띄우지 않고 건너뛴다. */
+function shouldShow(q, answers){
+  const cond = q.showIf;
+  if(!cond) return true;
+  const neg = cond.includes('!=');
+  const [key, raw] = cond.split(neg ? '!=' : '=');
+  const list = String(raw||'').split(',').map(v=>v.trim()).filter(Boolean);
+  const got = answers[String(key||'').trim()];
+  if(got === undefined) return true;          /* 아직 안 물어본 문항이면 일단 보여준다 */
+  return neg ? !list.includes(got) : list.includes(got);
+}
+
+/* 현재 위치에서 조건을 만족하는 다음 문항 index. 없으면 -1 */
+function nextIndex(from){
+  for(let i=from; i<QUESTIONS.length; i++){
+    if(shouldShow(QUESTIONS[i], state.answers)) return i;
+  }
+  return -1;
+}
+function prevIndex(from){
+  for(let i=from; i>=0; i--){
+    if(shouldShow(QUESTIONS[i], state.answers)) return i;
+  }
+  return -1;
+}
 
 function questionsOf(surveys){
   return ALL_QUESTIONS.filter(q=>surveys.includes(q.survey));
@@ -768,7 +796,7 @@ function render(){
 
 function renderInner(){
   renderRail();
-  const fn = {intro:vIntro, check:vCheck, report:vReport, micro:vMicro,
+  const fn = {intro:vIntro, check:vCheck, bridge:vBridge, report:vReport, micro:vMicro,
               rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
   stage.innerHTML = fn();
   bind();
@@ -776,7 +804,7 @@ function renderInner(){
 }
 
 function renderRail(){
-  const cur = state.screen==='report' ? 'check' : state.screen;
+  const cur = (state.screen==='report'||state.screen==='bridge') ? 'check' : state.screen;
   const ci = SCREENS.indexOf(cur);
   document.getElementById('journey').innerHTML = SCREENS.map((s,i)=>{
     const done = state.visited.has(s) && i !== ci;
@@ -800,9 +828,10 @@ function vIntro(){
   <p class="lede">넛지온은 상담을 대신하지 않아요. 상담·복지·취업 자원에 <b>도달하기 전에 멈추는 지점</b>을
   찾아서, 그 한 걸음을 대신 잘게 쪼개주는 다리 역할을 합니다. 평가하지 않고, 오늘 못 해도 기록에 남지 않아요.</p>
   <div class="card">
-    <b style="font-size:15px">먼저 5개 질문으로 지금 상태를 볼게요</b>
+    <b style="font-size:15px">짧은 질문 몇 개로 출발점을 찾아볼게요</b>
     <p style="margin:8px 0 0; font-size:14px; color:var(--ink-soft)">
-      진단이 아니라 출발점을 찾기 위한 질문이에요. 1분이면 끝나고, 언제든 그만둘 수 있어요.</p>
+      가벼운 질문으로 시작해서, 답변에 따라 필요한 만큼만 더 여쭤봐요. 보통 3~5분쯤 걸려요.
+      진단이 아니라 시작점을 찾기 위한 질문이고, 어려운 문항은 건너뛰어도 괜찮아요.</p>
   </div>
   <div class="row"><button class="btn" data-go="check">시작하기</button></div>
   <p class="note">이 프로토타입은 2026 ZERO to AI Challenge 제안서 「Nudge On」을 실제로 움직이게 만든 버전입니다.
@@ -811,7 +840,9 @@ function vIntro(){
 
 /* ── 01 자가진단 ── */
 function vCheck(){
-  const total = QUESTIONS.length;
+  const visible = QUESTIONS.filter(q=>shouldShow(q,state.answers));
+  const total = visible.length;
+  const pos = Math.max(1, visible.findIndex(q=>q.key===QUESTIONS[Math.min(state.qi,QUESTIONS.length-1)]?.key)+1);
   if(!total) return `
     <div class="eyebrow">01 — Self Check</div>
     <h2 class="mid" tabindex="-1">문항을 불러오지 못했어요</h2>
@@ -822,8 +853,8 @@ function vCheck(){
   const stageName = sv==='warmup' ? '워밍업'
                   : sv==='s1'     ? '1차 조사'
                   : sv.startsWith('s2') ? '2차 조사' : '';
-  const head = stageName ? `${stageName} · ${state.qi+1} / ${total} 문항`
-                         : `${state.qi+1} / ${total} 문항`;
+  const head = stageName ? `${stageName} · ${pos} / ${total} 문항`
+                         : `${pos} / ${total} 문항`;
 
   /* 주관식 문항 (flag = OPEN) */
   if(Q.flag==='OPEN'){
@@ -832,7 +863,7 @@ function vCheck(){
     return `
     <div class="eyebrow">01 — Self Check</div>
     <div class="qcount">${head}</div>
-    <div class="bar"><i style="width:${(state.qi)/total*100}%"></i></div>
+    <div class="bar"><i style="width:${(pos-1)/total*100}%"></i></div>
     <h2 class="mid" tabindex="-1">${Q.q}</h2>
     <textarea id="openAns" rows="4" placeholder="편한 만큼만 적어주세요. 비워두셔도 괜찮아요."
       style="width:100%; box-sizing:border-box; padding:12px; font:inherit; font-size:15px;
@@ -848,7 +879,7 @@ function vCheck(){
   return `
   <div class="eyebrow">01 — Self Check</div>
   <div class="qcount">${head}</div>
-  <div class="bar"><i style="width:${(state.qi)/total*100}%"></i></div>
+  <div class="bar"><i style="width:${(pos-1)/total*100}%"></i></div>
   <h2 class="mid" tabindex="-1">${Q.q}</h2>
   <div class="opts">
     ${Q.opts.map(([label,val])=>`
@@ -1042,7 +1073,14 @@ function bind(){
     render();
   });
   stage.querySelectorAll('[data-ans]').forEach(b=>b.onclick=()=>answer(b.dataset.ans));
-  stage.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>{state.qi--; render()});
+  stage.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>{
+    const pv = prevIndex(state.qi-1);
+    if(pv>=0){ state.qi = pv; render(); }
+  });
+  stage.querySelectorAll('[data-resume]').forEach(b=>b.onclick=()=>{
+    const nx = nextIndex(state.qi+1);
+    if(nx>=0){ state.qi = nx; state.screen='check'; render(); } else finishCheck();
+  });
   stage.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{
     const t=document.getElementById('openAns');
     answer((t?.value||'').trim() || '(답하지 않음)');
@@ -1092,17 +1130,47 @@ function answer(val){
   /* 1차 조사의 마지막 문항이면 군을 판정하고 2차 문항을 이어붙인다 */
   const isLastS1 = Q.survey==='s1' &&
                    !QUESTIONS.slice(state.qi+1).some(q=>String(q.survey||'')==='s1');
+  let justBranched = false;
   if(isLastS1 && !state.group){
     state.group = decideGroup(state.answers);
     const next = questionsOf([STAGE2[state.group]]);
     if(next.length){
       QUESTIONS = QUESTIONS.concat(next);
+      justBranched = true;
       console.info('자가진단 분기:', state.group, '· 2차 문항', next.length+'개');
     }
   }
 
-  if(state.qi < QUESTIONS.length-1){ state.qi++; render(); }
+  const nxt = nextIndex(state.qi+1);
+  if(justBranched){ state.screen='bridge'; render(); return; }
+  if(nxt >= 0){ state.qi = nxt; render(); }
   else finishCheck();
+}
+
+/* 1차 → 2차로 넘어가기 전 숨 고르는 화면 */
+const BRIDGE = {
+  hikikomori:{ line:'지금은 집 안이 가장 편한 시기인 것 같아요.',
+    body:'무리해서 밖으로 나가는 이야기는 하지 않을게요. 대신 지금 생활을 조금 더 알아야 오늘 할 수 있는 크기의 행동을 고를 수 있어요.' },
+  isolation:{ line:'밖으로는 나가지만, 사람과의 연결은 줄어 있는 상태로 보여요.',
+    body:'어디서 멈추는지가 사람마다 달라서, 몇 가지만 더 여쭤볼게요. 그래야 연습부터 할지 연결부터 할지 정할 수 있어요.' },
+  boundary:{ line:'일상은 대체로 유지되고 있네요.',
+    body:'그렇다면 상태를 더 묻기보다, 어떤 걸 좋아하고 뭘 바라는지 아는 게 더 도움이 돼요. 편하게 답해주세요.' }
+};
+
+function vBridge(){
+  const g = BRIDGE[state.group] || BRIDGE.isolation;
+  const left = QUESTIONS.slice(state.qi+1).filter(q=>shouldShow(q,state.answers)).length;
+  return `
+  <div class="eyebrow">01 — Self Check</div>
+  <h2 class="mid" tabindex="-1">${g.line}</h2>
+  <div class="card">
+    <p style="margin:0; font-size:15px">${g.body}</p>
+    <p style="margin:10px 0 0; font-size:14px; color:var(--ink-soft)">
+      남은 문항은 <b>${left}개</b>예요. 답하기 어려운 건 건너뛰어도 괜찮아요.</p>
+  </div>
+  <div class="row"><button class="btn" data-resume="1">계속하기</button></div>
+  <p class="note">넛지온은 사용자를 어떤 유형으로 분류하지 않아요.
+  지금 <b>어디서 멈췄는지</b>만 보고, 그에 맞는 크기의 행동을 찾습니다.</p>`;
 }
 
 async function finishCheck(){
