@@ -1,51 +1,39 @@
-import { Mic, MicOff, Volume2 } from 'lucide-react';
-import type { Opponent, ConversationPhase } from '@/data/opponents';
+import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import type { Scenario } from '@/data/opponents';
 
 type Props = {
-  opponent: Opponent;
-  phase: ConversationPhase;
-  currentLine: string;
+  scenario: Scenario;
   isSpeaking: boolean;
+  isWaiting: boolean;
+  isUserTurn: boolean;
+  currentLine: string;
   turnNumber: number;
   totalTurns: number;
   muted: boolean;
+  cameraOn: boolean;
   onToggleMute: () => void;
+  onToggleCamera: () => void;
 };
 
 export function OpponentPanel({
-  opponent,
-  phase,
-  currentLine,
+  scenario,
   isSpeaking,
-  turnNumber,
-  totalTurns,
+  isWaiting,
+  isUserTurn,
+  currentLine,
   muted,
+  cameraOn,
   onToggleMute,
+  onToggleCamera,
 }: Props) {
-  const isActive = phase === 'opponent-speaking';
+  const isActive = isSpeaking;
 
   return (
-    <div className={`opponent-panel ${isActive ? 'speaking' : ''} ${phase === 'waiting' ? 'idle' : ''}`}>
-      <div className="panel-heading">
-        <div>
-          <h3>
-            <span className={`live-pill ${isActive ? 'speaking-pill' : ''}`}>
-              {isActive ? '● 말하는 중' : phase === 'user-responding' ? '대기 중' : '준비됨'}
-            </span>
-            상대방
-          </h3>
-          <span>{opponent.role} · {opponent.description}</span>
-        </div>
-        <button className={`control small ${muted ? 'off' : ''}`} onClick={onToggleMute}>
-          {muted ? <MicOff size={16} /> : <Volume2 size={16} />}
-          <span>{muted ? '음소거' : '소리 켜짐'}</span>
-        </button>
-      </div>
-
-      <div className="opponent-stage">
+    <div className={`opponent-card ${isActive ? 'speaking' : ''} ${isWaiting ? 'idle' : ''}`}>
+      <div className="opponent-portrait-wrap">
         <img
-          src={opponent.portrait}
-          alt={opponent.name}
+          src={scenario.portrait}
+          alt={scenario.opponentName}
           className={`opponent-portrait ${isSpeaking ? 'talking' : ''}`}
         />
         {isSpeaking && (
@@ -55,27 +43,37 @@ export function OpponentPanel({
           </>
         )}
         <div className="opponent-info">
-          <strong>{opponent.name}</strong>
-          <span>{opponent.role}</span>
+          <strong>{scenario.opponentName}</strong>
+          <span>{scenario.opponentRole}</span>
         </div>
-        {phase === 'opponent-speaking' && (
+        <div className="opponent-status-bar">
+          <span className={`opponent-status-pill ${isActive ? 'speaking' : ''}`}>
+            <span className="dot" />
+            {isActive ? '말하는 중' : isUserTurn ? '대기 중' : '준비됨'}
+          </span>
+        </div>
+        {isSpeaking && currentLine && (
           <div className="opponent-subtitle">
             <p>{currentLine}</p>
           </div>
         )}
-        {phase === 'user-responding' && (
+        {isUserTurn && (
           <div className="opponent-subtitle your-turn">
-            <Mic size={14} />
+            <Mic size={14} color="#F4E7CA" />
             <p>당신 차례입니다 — 자연스럽게 대답해 보세요.</p>
           </div>
         )}
       </div>
 
-      <div className="turn-indicator">
-        {Array.from({ length: totalTurns }).map((_, i) => (
-          <span key={i} className={`turn-dot ${i < turnNumber ? 'done' : ''} ${i === turnNumber ? 'current' : ''}`} />
-        ))}
-        <span className="turn-count">대화 {Math.min(turnNumber + 1, totalTurns)} / {totalTurns}</span>
+      <div className="opponent-controls">
+        <button className={`opp-btn ${muted ? 'muted' : 'active'}`} onClick={onToggleMute}>
+          {muted ? <MicOff size={15} /> : <Volume2 size={15} />}
+          <span>{muted ? '음소거' : '소리 켜짐'}</span>
+        </button>
+        <button className={`opp-btn ${cameraOn ? 'active' : ''}`} onClick={onToggleCamera}>
+          {cameraOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
+        </button>
       </div>
     </div>
   );

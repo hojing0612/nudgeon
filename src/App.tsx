@@ -1,40 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Activity,
-  ArrowRight,
-  BarChart3,
   Camera,
   CameraOff,
   Check,
-  ChevronDown,
-  CircleHelp,
-  Clock3,
   Eye,
-  FileText,
   Lightbulb,
-  Loader2,
   Mic,
-  MicOff,
-  Pause,
-  Play,
   RotateCcw,
   Save,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
+  Send,
   Volume2,
-  Waves,
-  X,
 } from 'lucide-react';
 import { useVoiceAnalysis } from '@/hooks/useVoiceAnalysis';
 import { useFaceAnalysis } from '@/hooks/useFaceAnalysis';
 import { useKoreanTTS } from '@/hooks/useKoreanTTS';
-import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { supabase } from '@/lib/supabase';
 import { SCENARIOS } from '@/data/opponents';
-import type { Scenario, DialogueEntry, ConversationPhase } from '@/data/opponents';
+import type { Scenario, ChatMessage } from '@/data/opponents';
 import { OpponentPanel } from '@/components/OpponentPanel';
 import { DialogueTranscript } from '@/components/DialogueTranscript';
+
+type Phase = 'idle' | 'speaking' | 'user-turn' | 'finished';
 
 type FeedbackResult = {
   wpm: number;
@@ -66,72 +52,70 @@ function buildFeedback(wpm: number, tremor: number, gazeFocus: number, volume: n
   if (gazeFocus < 60) tips.push('시선이 자주 아래로 머물어요. 상대방의 눈(카메라)을 향해 시선을 두면 더 또렷해져요.');
   else tips.push('시선 집중이 좋아요. 상대방을 바라보는 감각을 계속 가져가 보세요.');
 
-  if (volume < 30) tips.push('목소리가 조금 작아요. 평소보다 한 톤만 더 키워보세요.');
-  else if (volume > 80) tips.push('목소리가 또렷해요. 다만 너무 크면 숨이 빨리 차니 편한 톤을 찾아보세요.');
-
-  if (dialogueCount >= 3) tips.push(`${dialogueCount}번의 대화를 주고받았어요. 자연스럽게 이어가는 연습이 잘 되고 있어요.`);
+  if (dialogueCount >= 2) tips.push(`${dialogueCount}번의 대화를 주고받았어요. 자연스럽게 이어가는 연습이 잘 되고 있어요.`);
 
   return { wpm, tremor, gazeFocus, volume, overallScore, tips };
 }
 
-function formatTime(seconds: number) {
-  return `00:${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-}
+async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<{ reply: string; coach: string }> {
+  const history = messages
+    .filter((m) => m.role !== 'coach')
+    .map((m) => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text }));
 
-function tremorLabel(tremor: number) {
-  if (tremor < 30) return { text: '낮음', note: '안정적인 편이에요', tone: 'green' as const };
-  if (tremor < 60) return { text: '보통', note: '조금 떨림이 있어요', tone: 'amber' as const };
-  return { text: '높음', note: '심호흡이 도움돼요', tone: 'amber' as const };
-}
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: history,
+      system: `너는 사회적 리허설 상대다. 역할: ${scenario.who}. 상황: ${scenario.title}.
+상대는 오래 사람을 만나지 않은 청년이다. 절대 냉담하거나 무례하지 않다.
+말투는 현실적이되 따뜻하고, 2~3문장으로 짧게. 실제로 그 사람이 할 법한 대화만 한다.
+그리고 마지막에 한 줄, 사용자에게 주는 짧은 코칭을 붙인다.
+형식: 대화 내용 → 줄바꿈 → "COACH: 코칭 한 문장"`,
+    }),
+  });
 
-function wpmLabel(wpm: number) {
-  if (wpm === 0) return { text: '—', note: '권장 120–150 WPM', tone: 'blue' as const };
-  return { text: String(wpm), note: '권장 120–150 WPM', tone: 'blue' as const };
-}
-
-function gazeLabel(gaze: number) {
-  if (gaze === 0) return { text: '—', note: '카메라 기준', tone: 'amber' as const };
-  return { text: `${gaze}%`, note: '카메라 기준', tone: 'amber' as const };
+  if (!res.ok) throw new Error('API ' + res.status);
+  const data = await res.json();
+  const text = (data.text || '').trim();
+  const [replyPart, coachPart] = text.split(/COACH\s*:/);
+  return {
+    reply: replyPart.trim(),
+    coach: coachPart ? coachPart.trim() : '',
+  };
 }
 
 function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [scenario, setScenario] = useState<Scenario | null>(null);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [currentLine, setCurrentLine] = useState('');
   const [cameraOn, setCameraOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
-  const [opponentMuted, setOpponentMuted] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showScenarios, setShowScenarios] = useState(false);
-  const [scenario, setScenario] = useState<Scenario>(SCENARIOS[0]);
+  const [muted, setMuted] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [inputText, setInputText] = useState('');
 
-  const [phase, setPhase] = useState<ConversationPhase>('waiting');
-  const [turnNumber, setTurnNumber] = useState(0);
-  const [dialogue, setDialogue] = useState<DialogueEntry[]>([]);
-  const [currentOpponentLine, setCurrentOpponentLine] = useState('');
-  const conversationEndedRef = useRef(false);
-
-  const { metrics: voiceMetrics, error: voiceError } = useVoiceAnalysis(isRecording && micOn, micOn);
-  const { metrics: faceMetrics, error: faceError } = useFaceAnalysis(isRecording && cameraOn, cameraOn, videoRef);
-  const { speak: speakTTS, stop: stopTTS, isSpeaking } = useKoreanTTS();
-  const { transcript: liveTranscript, reset: resetTranscript } = useSpeechRecognition(phase === 'user-responding');
+  const { metrics: voiceMetrics, error: voiceError } = useVoiceAnalysis(phase === 'user-turn' || phase === 'speaking', true);
+  const { metrics: faceMetrics, error: faceError } = useFaceAnalysis((phase === 'user-turn' || phase === 'speaking') && cameraOn, cameraOn, videoRef);
+  const { speak: speakTTS, stop: stopTTS, isSpeaking: ttsSpeaking } = useKoreanTTS();
 
   const wpmAvgRef = useRef<number[]>([]);
   const tremorAvgRef = useRef<number[]>([]);
   const gazeAvgRef = useRef<number[]>([]);
   const volumeAvgRef = useRef<number[]>([]);
-  const userResponseTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!isRecording) return;
-    const timer = window.setInterval(() => setElapsed((time) => time + 1), 1000);
+    if (phase === 'idle' || phase === 'finished') return;
+    const timer = window.setInterval(() => setElapsed((t) => t + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [isRecording]);
+  }, [phase]);
 
   useEffect(() => {
     if (!cameraOn || !navigator.mediaDevices?.getUserMedia) return;
@@ -155,7 +139,7 @@ function App() {
   }, [cameraOn]);
 
   useEffect(() => {
-    if (!isRecording) return;
+    if (phase === 'idle' || phase === 'finished') return;
     wpmAvgRef.current.push(voiceMetrics.wpm);
     if (wpmAvgRef.current.length > 120) wpmAvgRef.current.shift();
     tremorAvgRef.current.push(voiceMetrics.tremor);
@@ -164,141 +148,125 @@ function App() {
     if (gazeAvgRef.current.length > 120) gazeAvgRef.current.shift();
     volumeAvgRef.current.push(voiceMetrics.volume);
     if (volumeAvgRef.current.length > 120) volumeAvgRef.current.shift();
-  }, [voiceMetrics, faceMetrics, isRecording]);
+  }, [voiceMetrics, faceMetrics, phase]);
 
-  const totalTurns = scenario.opponent.lines.length;
+  const avg = (arr: number[]) => (arr.length === 0 ? 0 : Math.round(arr.reduce((a, b) => a + b, 0) / arr.length));
 
-  const speakOpponentLine = useCallback((lineText: string, onDone: () => void) => {
-    setCurrentOpponentLine(lineText);
-    setDialogue((prev) => [...prev, { speaker: 'opponent', text: lineText, timestamp: Date.now() }]);
-
-    if (opponentMuted) {
-      window.setTimeout(onDone, 1500);
-      return;
-    }
-
-    speakTTS(lineText, onDone);
-  }, [opponentMuted, speakTTS]);
-
-  const startOpponentTurn = useCallback((turn: number) => {
-    if (turn >= totalTurns) {
-      setPhase('finished');
-      setIsRecording(false);
-      setIsFinished(true);
-      conversationEndedRef.current = true;
-      return;
-    }
-
-    const line = scenario.opponent.lines[turn];
-    setPhase('opponent-speaking');
-
-    speakOpponentLine(line.text, () => {
-      setPhase('user-responding');
-      resetTranscript();
-    });
-  }, [scenario, totalTurns, speakOpponentLine, resetTranscript]);
-
-  const advanceTurn = useCallback(() => {
-    if (conversationEndedRef.current) return;
-    if (phase !== 'user-responding') return;
-
-    const userText = liveTranscript.trim();
-    if (userText) {
-      setDialogue((prev) => [...prev, { speaker: 'user', text: userText, timestamp: Date.now() }]);
-    }
-    resetTranscript();
-
-    const nextTurn = turnNumber + 1;
-    setTurnNumber(nextTurn);
-    startOpponentTurn(nextTurn);
-  }, [phase, liveTranscript, turnNumber, resetTranscript, startOpponentTurn]);
-
-  const skipTurn = useCallback(() => {
-    if (phase !== 'user-responding') return;
-    advanceTurn();
-  }, [phase, advanceTurn]);
-
-  // Auto-advance if user is silent for too long
-  useEffect(() => {
-    if (phase !== 'user-responding') {
-      if (userResponseTimeoutRef.current) {
-        window.clearTimeout(userResponseTimeoutRef.current);
-        userResponseTimeoutRef.current = null;
-      }
-      return;
-    }
-
-    userResponseTimeoutRef.current = window.setTimeout(() => {
-      advanceTurn();
-    }, 20000);
-
-    return () => {
-      if (userResponseTimeoutRef.current) {
-        window.clearTimeout(userResponseTimeoutRef.current);
-        userResponseTimeoutRef.current = null;
-      }
-    };
-  }, [phase, turnNumber, advanceTurn]);
-
-  const toggleRecording = async () => {
-    if (isRecording) {
-      setIsRecording(false);
-      setIsFinished(true);
-      setPhase('finished');
-      stopTTS();
-      conversationEndedRef.current = true;
-      setSavedId(null);
-      setSaveError(null);
-    } else {
-      setElapsed(0);
-      wpmAvgRef.current = [];
-      tremorAvgRef.current = [];
-      gazeAvgRef.current = [];
-      volumeAvgRef.current = [];
-      setIsFinished(false);
-      setSavedId(null);
-      setSaveError(null);
-      setDialogue([]);
-      setTurnNumber(0);
-      setPhase('waiting');
-      conversationEndedRef.current = false;
-      resetTranscript();
-      setIsRecording(true);
-
-      // Start conversation after a brief delay
-      window.setTimeout(() => {
-        startOpponentTurn(0);
-      }, 800);
-    }
+  const liveAverages = {
+    wpm: avg(wpmAvgRef.current),
+    tremor: avg(tremorAvgRef.current),
+    gaze: avg(gazeAvgRef.current),
+    volume: avg(volumeAvgRef.current),
   };
 
-  const reset = () => {
-    setElapsed(0);
-    setIsRecording(false);
+  const feedback = isFinished
+    ? buildFeedback(
+        liveAverages.wpm,
+        liveAverages.tremor,
+        liveAverages.gaze,
+        liveAverages.volume,
+        elapsed,
+        messages.filter((m) => m.role === 'me').length,
+      )
+    : null;
+
+  const startScenario = useCallback((sc: Scenario) => {
+    setScenario(sc);
+    setMessages([{ role: 'them', text: sc.open }]);
+    setCurrentLine(sc.open);
+    setPhase('speaking');
     setIsFinished(false);
+    setElapsed(0);
     setSavedId(null);
     setSaveError(null);
-    setDialogue([]);
-    setTurnNumber(0);
-    setPhase('waiting');
-    conversationEndedRef.current = false;
     wpmAvgRef.current = [];
     tremorAvgRef.current = [];
     gazeAvgRef.current = [];
     volumeAvgRef.current = [];
+
+    if (!muted) {
+      speakTTS(sc.open, () => {
+        setPhase('user-turn');
+      });
+    } else {
+      window.setTimeout(() => setPhase('user-turn'), 2000);
+    }
+  }, [muted, speakTTS]);
+
+  const send = useCallback(async () => {
+    if (!scenario || busy || phase !== 'user-turn') return;
+    const text = inputText.trim();
+    if (!text) return;
+
+    setInputText('');
+    const newMessages = [...messages, { role: 'me' as const, text }];
+    setMessages(newMessages);
+    setBusy(true);
+    setPhase('speaking');
+
+    try {
+      const { reply, coach } = await askAI(newMessages, scenario);
+      const updated = [...newMessages, { role: 'them' as const, text: reply }];
+      if (coach) updated.push({ role: 'coach' as const, text: '코칭 · ' + coach });
+      setMessages(updated);
+      setCurrentLine(reply);
+
+      if (!muted) {
+        speakTTS(reply, () => {
+          setPhase('user-turn');
+        });
+      } else {
+        window.setTimeout(() => setPhase('user-turn'), 2000);
+      }
+    } catch {
+      const fallback = '네, 편하게 말씀해 주세요. 천천히 하셔도 괜찮습니다.';
+      const fallbackCoach = '코칭 · 지금처럼 한 문장만 써도 충분히 전달돼요.';
+      setMessages([...newMessages, { role: 'them', text: fallback }, { role: 'coach', text: fallbackCoach }]);
+      setCurrentLine(fallback);
+      if (!muted) {
+        speakTTS(fallback, () => setPhase('user-turn'));
+      } else {
+        window.setTimeout(() => setPhase('user-turn'), 2000);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [scenario, busy, phase, inputText, messages, muted, speakTTS]);
+
+  const finishRehearsal = useCallback(() => {
+    setPhase('finished');
+    setIsFinished(true);
     stopTTS();
-    resetTranscript();
-  };
+    setSavedId(null);
+    setSaveError(null);
+  }, [stopTTS]);
+
+  const reset = useCallback(() => {
+    setScenario(null);
+    setMessages([]);
+    setPhase('idle');
+    setIsFinished(false);
+    setElapsed(0);
+    setCurrentLine('');
+    setInputText('');
+    setSavedId(null);
+    setSaveError(null);
+    stopTTS();
+    wpmAvgRef.current = [];
+    tremorAvgRef.current = [];
+    gazeAvgRef.current = [];
+    volumeAvgRef.current = [];
+  }, [stopTTS]);
 
   const saveSession = async () => {
-    if (!feedback) return;
+    if (!feedback || !scenario) return;
     setIsSaving(true);
     setSaveError(null);
     try {
       const { data, error } = await supabase
         .from('social_rehearsal_sessions')
         .insert({
-          scenario: scenario.label,
+          scenario: scenario.title,
           duration_seconds: elapsed,
           wpm: feedback.wpm,
           tremor: feedback.tremor,
@@ -318,276 +286,253 @@ function App() {
     }
   };
 
-  const liveAverages = useMemo(() => {
-    const avg = (arr: number[]) => (arr.length === 0 ? 0 : Math.round(arr.reduce((a, b) => a + b, 0) / arr.length));
-    return {
-      wpm: avg(wpmAvgRef.current),
-      tremor: avg(tremorAvgRef.current),
-      gaze: avg(gazeAvgRef.current),
-      volume: avg(volumeAvgRef.current),
-    };
-  }, [voiceMetrics, faceMetrics, isRecording]);
-
-  const feedback = useMemo<FeedbackResult | null>(() => {
-    if (!isFinished) return null;
-    const userTurns = dialogue.filter((d) => d.speaker === 'user').length;
-    return buildFeedback(liveAverages.wpm, liveAverages.tremor, liveAverages.gaze, liveAverages.volume, elapsed, userTurns);
-  }, [isFinished, liveAverages, elapsed, dialogue]);
-
-  const displayWpm = isFinished ? (feedback?.wpm ?? 0) : isRecording ? liveAverages.wpm : 0;
-  const displayTremor = isFinished ? (feedback?.tremor ?? 0) : isRecording ? liveAverages.tremor : 0;
-  const displayGaze = isFinished ? (feedback?.gazeFocus ?? 0) : isRecording ? liveAverages.gaze : 0;
-
-  const wpmInfo = wpmLabel(displayWpm);
-  const tremorInfo = tremorLabel(displayTremor);
-  const gazeInfo = gazeLabel(displayGaze);
-
-  const showLive = isRecording;
+  const isWaiting = phase === 'idle';
+  const isSpeaking = phase === 'speaking';
+  const isUserTurn = phase === 'user-turn';
   const showResults = isFinished && feedback !== null;
-  const showWaiting = !isRecording && !isFinished;
+  const userTurns = messages.filter((m) => m.role === 'me').length;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Sparkles size={16} /></span><span>nudge <b>on</b></span></div>
-        <div className="workspace-switcher"><div><span className="eyebrow">MY WORKSPACE</span><strong>김민지님의 공간</strong></div><ChevronDown size={16} /></div>
-        <nav className="nav-list">
-          <span className="nav-label">나의 여정</span>
-          <a><Activity size={17} /> 오늘의 대시보드</a>
-          <a><FileText size={17} /> 자가진단</a>
-          <a><BarChart3 size={17} /> 마이크로스텝</a>
-          <a className="active"><Waves size={17} /> 사회적 리허설 <span className="new-dot" /></a>
-          <a><ArrowRight size={17} /> AI 연결</a>
-          <a><Clock3 size={17} /> 기록·성장</a>
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="progress-label"><span>이번 주 연결 점수</span><b>72%</b></div>
-          <div className="progress"><i /></div>
-          <button className="help-link"><CircleHelp size={16} /> 도움이 필요하신가요?</button>
-          <div className="profile"><div className="avatar">김</div><div><strong>김민지</strong><span>대학생 · 취업 준비</span></div><Settings2 size={17} /></div>
+    <div className="app">
+      <aside className="rail">
+        <div>
+          <div className="brand">nudge<span className="dot"> on</span></div>
+          <div className="brand-sub">bridge, not companion</div>
+        </div>
+
+        <div>
+          <svg className="window" viewBox="0 0 120 104" aria-hidden="true">
+            <rect x="4" y="4" width="112" height="96" rx="8" fill="#2C3833" />
+            <g className="daylight" style={{ opacity: 0.55 }}>
+              <rect x="12" y="12" width="96" height="80" rx="4" fill="#F6E8C4" />
+              <circle cx="82" cy="34" r="11" fill="#F3D488" />
+              <path d="M12 74 L40 54 L60 70 L82 50 L108 72 L108 88 Q108 92 104 92 L16 92 Q12 92 12 88 Z" fill="#B9CBB4" />
+            </g>
+            <rect x="12" y="12" width="96" height="80" rx="4" fill="none" stroke="#2C3833" strokeWidth="1" />
+            <rect x="58.5" y="12" width="3" height="80" fill="#2C3833" />
+            <rect x="12" y="49" width="96" height="3" fill="#2C3833" />
+            <g className="curtain l"><rect x="12" y="12" width="46" height="80" fill="#8C9A93" opacity=".95" /></g>
+            <g className="curtain r"><rect x="62" y="12" width="46" height="80" fill="#8C9A93" opacity=".95" /></g>
+            <rect x="4" y="4" width="112" height="96" rx="8" fill="none" stroke="#2C3833" strokeWidth="7" />
+          </svg>
+          <div className="window-note">{scenario ? '빛이 들어오고 있어요' : '커튼은 아직 닫혀 있어요'}</div>
+        </div>
+
+        <ul className="journey">
+          <li className="jstep" data-state="done"><span className="num">01</span><span>자가진단</span></li>
+          <li className="jstep" data-state="done"><span className="num">02</span><span>마이크로스텝</span></li>
+          <li className="jstep" data-state="now"><span className="num">03</span><span>사회적 리허설</span></li>
+          <li className="jstep" data-state="todo"><span className="num">04</span><span>AI 연결</span></li>
+          <li className="jstep" data-state="todo"><span className="num">05</span><span>기록·성장</span></li>
+        </ul>
+
+        <div className="rail-foot">
+          이 화면은 공모전 시연용 프로토타입입니다.<br />
+          기관 정보는 예시 데이터이며, 실제 서비스에서는 검증된 DB를 연결합니다.
         </div>
       </aside>
 
-      <main className="main-content">
-        <header className="topbar">
-          <div>
-            <span className="breadcrumb">나의 여정 <b>/</b> 사회적 리허설</span>
-            <h1>사회적 리허설 <span>Social Rehearsal</span></h1>
-          </div>
-          <div className="top-actions">
-            <span className="secure"><ShieldCheck size={15} /> 내 기록은 안전하게 보호돼요</span>
-            <button className="icon-button" onClick={() => setShowSettings((value) => !value)}><Settings2 size={19} /></button>
-          </div>
-        </header>
-        {showSettings && (
-          <div className="settings-popover">
-            <strong>분석 설정</strong>
-            <span><Check size={15} /> 음성 분석 (말 속도·떨림)</span>
-            <span><Check size={15} /> 표정·시선 분석</span>
-            <span><Check size={15} /> 대화 상대방 음성</span>
-            <span><Check size={15} /> 기록 저장</span>
-            <button onClick={() => setShowSettings(false)}>닫기 <X size={14} /></button>
-          </div>
-        )}
-
-        <section className="intro-row">
-          <div>
-            <p className="section-kicker">STEP 03 · 실제 상황을 미리 연습해요</p>
-            <h2>안전한 공간에서,<br /><em>상대방과 대화하며</em> 연습해요</h2>
-            <p className="intro-copy">AI 상대방이 면접관, 동료, 처음 만난 사람 역할을 맡아 대화를 이어가요.<br />당신의 <b>말 속도, 목소리 떨림, 시선과 표정</b>을 살펴보고 다음에 시도해볼 팁을 알려드려요.</p>
-          </div>
-          <div className="scenario-card">
-            <span className="scenario-icon"><Mic size={18} /></span>
-            <div>
-              <span className="eyebrow">연습 중인 상황</span>
-              <strong>{scenario.label}</strong>
-              <span>{scenario.prompt}</span>
-            </div>
-            <button onClick={() => setShowScenarios((value) => !value)}>변경 <ChevronDown size={14} /></button>
-          </div>
-        </section>
-        {showScenarios && (
-          <div className="scenario-menu">
-            {SCENARIOS.map((s) => (
-              <button key={s.id} className={s.id === scenario.id ? 'selected' : ''} onClick={() => { setScenario(s); setShowScenarios(false); reset(); }}>
-                <span>{s.label}</span>
-                <small>{s.prompt}</small>
-                {s.id === scenario.id && <Check size={15} />}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <section className="practice-grid">
-          <div className="video-panel">
-            <div className="panel-heading">
-              <div>
-                <h3>
-                  <span className={`live-pill ${isRecording ? 'rec' : ''}`}>{isRecording ? '● LIVE' : 'READY'}</span>
-                  나의 리허설
-                </h3>
-                <span>카메라와 마이크를 켜고 상대방과 대화해보세요.</span>
-              </div>
-              <span className="timer">{formatTime(elapsed)}</span>
-            </div>
-            <div className={`video-stage ${!cameraOn ? 'camera-off' : ''}`}>
-              {cameraOn ? (
-                <video ref={videoRef} autoPlay muted playsInline />
-              ) : (
-                <div className="camera-placeholder"><CameraOff size={32} /><span>카메라가 꺼져 있어요</span></div>
-              )}
-              {cameraOn && (
-                <div className="video-overlay">
-                  <span className={faceMetrics.faceDetected ? 'active' : ''}><Eye size={14} /> {isRecording ? (faceMetrics.faceDetected ? '시선 분석 중' : '얼굴을 찾는 중') : '시선 분석 대기'}</span>
-                  <span className={voiceMetrics.isActive ? 'active' : ''}><Volume2 size={14} /> {isRecording ? (voiceMetrics.isActive ? '음성 분석 중' : '침묵 구간') : '음성 분석 대기'}</span>
-                </div>
-              )}
-              {isRecording && <div className="recording-badge"><i /> REC</div>}
-              {isRecording && cameraOn && (
-                <div className="live-meters">
-                  <div className="meter-row"><span>말 속도</span><div className="meter-bar"><i style={{ width: `${Math.min(100, (liveAverages.wpm / 200) * 100)}%` }} /></div><b>{liveAverages.wpm}</b></div>
-                  <div className="meter-row"><span>떨림</span><div className="meter-bar"><i style={{ width: `${liveAverages.tremor}%`, background: liveAverages.tremor > 50 ? '#df655c' : '#55a7ed' }} /></div><b>{liveAverages.tremor}</b></div>
-                  <div className="meter-row"><span>시선</span><div className="meter-bar"><i style={{ width: `${liveAverages.gaze}%`, background: '#47b87b' }} /></div><b>{liveAverages.gaze}%</b></div>
-                </div>
-              )}
-              {phase === 'user-responding' && (
-                <div className="turn-prompt">
-                  <Mic size={16} />
-                  <span>당신 차례 — 말해보세요</span>
-                  {liveTranscript && <em>{liveTranscript}</em>}
-                </div>
-              )}
-            </div>
-            {(voiceError || faceError) && (
-              <div className="error-banner">
-                <X size={14} />
-                <span>{voiceError || faceError}</span>
-              </div>
-            )}
-            <div className="controls">
-              <button className={`control ${micOn ? '' : 'off'}`} onClick={() => setMicOn((value) => !value)}>
-                {micOn ? <Mic size={18} /> : <MicOff size={18} />}
-                <span>{micOn ? '마이크 켜짐' : '마이크 꺼짐'}</span>
-              </button>
-              <button className={`control ${cameraOn ? '' : 'off'}`} onClick={() => setCameraOn((value) => !value)}>
-                {cameraOn ? <Camera size={18} /> : <CameraOff size={18} />}
-                <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
-              </button>
-              <button className="control" onClick={reset}><RotateCcw size={17} /><span>다시 시작</span></button>
-              {phase === 'user-responding' && (
-                <button className="control next-turn" onClick={skipTurn}>
-                  <ArrowRight size={16} />
-                  <span>다음 대화</span>
-                </button>
-              )}
-              <button className={`start-button ${isRecording ? 'stop' : ''}`} onClick={toggleRecording}>
-                {isRecording ? <Pause size={18} /> : <Play size={18} />}
-                <span>{isRecording ? '리허설 종료' : '리허설 시작'}</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="feedback-panel">
-            <div className="panel-heading">
-              <div>
-                <h3>실시간 피드백</h3>
-                <span>당신의 강점과 다음 시도를 발견해요.</span>
-              </div>
-              <span className={`analysis-status ${isRecording ? 'rec' : ''}`}>
-                <i /> {showLive ? '분석 중' : showResults ? '분석 완료' : '대기 중'}
-              </span>
-            </div>
-
-            <div className="score-card">
-              <div>
-                <span className="eyebrow">{showResults ? '이번 리허설 점수' : '현재 리허설 점수'}</span>
-                <strong>{showResults ? feedback!.overallScore : showLive ? '—' : '—'}<small>/100</small></strong>
-              </div>
-              <div className={`score-ring ${showResults ? 'filled' : ''}`}>
-                <span>{showResults ? (feedback!.overallScore >= 80 ? '좋아요' : feedback!.overallScore >= 60 ? '괜찮아요' : '응원해요') : showLive ? '분석 중' : '시작 전'}</span>
-              </div>
-            </div>
-
-            <div className="metrics">
-              <div className="metric">
-                <span>말 속도</span>
-                <strong className={wpmInfo.tone}>{showWaiting ? '—' : wpmInfo.text}</strong>
-                <small>{showWaiting ? '리허설을 시작하면 보여드려요' : wpmInfo.note}</small>
-              </div>
-              <div className="metric">
-                <span>목소리 떨림</span>
-                <strong className={tremorInfo.tone}>{showWaiting ? '—' : tremorInfo.text}</strong>
-                <small>{showWaiting ? '리허설을 시작하면 보여드려요' : tremorInfo.note}</small>
-              </div>
-              <div className="metric">
-                <span>시선 집중도</span>
-                <strong className={gazeInfo.tone}>{showWaiting ? '—' : gazeInfo.text}</strong>
-                <small>{showWaiting ? '리허설을 시작하면 보여드려요' : gazeInfo.note}</small>
-              </div>
-            </div>
-
-            <div className="tips">
-              <div className="tips-title"><Lightbulb size={16} /> AI 코치의 한마디</div>
-              {showResults && feedback ? (
-                feedback.tips.map((tip, index) => (
-                  <div className={`tip ${index === 0 ? 'featured' : ''}`} key={index}>
-                    <span>{String(index + 1).padStart(2, '0')}</span>
-                    <p>{tip}</p>
-                  </div>
-                ))
-              ) : showLive ? (
-                <div className="tip featured"><span>··</span><p>지금 분석 중이에요. 리허설을 마치면 맞춤 피드백이 도착해요.</p></div>
-              ) : (
-                <div className="tip featured"><span>01</span><p>리허설을 시작하면 상대방과 대화하며 실시간으로 분석해요.</p></div>
-              )}
-            </div>
-
-            {showResults && feedback && (
-              <div className="save-section">
-                {savedId ? (
-                  <div className="save-success"><Check size={16} /><span>이번 리허설이 기록에 저장되었어요.</span></div>
-                ) : (
-                  <button className="save-button" onClick={saveSession} disabled={isSaving}>
-                    {isSaving ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                    <span>{isSaving ? '저장하는 중...' : '이번 리허설 저장하기'}</span>
+      <main className="stage">
+        <div className="col">
+          {!scenario && (
+            <>
+              <div className="eyebrow">03 — Social Rehearsal</div>
+              <h2 className="mid" tabIndex={-1}>실전 말고, 먼저 여기서 한 번</h2>
+              <p className="lede">틀려도 아무 일도 일어나지 않는 자리에서 먼저 해봐요.
+              AI가 상대 역할을 맡고, 옆에서 짧게 코칭해줄게요. 그만두고 싶으면 그냥 나가면 돼요.</p>
+              <div className="scenario-grid">
+                {SCENARIOS.map((s) => (
+                  <button
+                    key={s.id}
+                    className="scenario-card-btn"
+                    onClick={() => startScenario(s)}
+                  >
+                    <span className="sc-icon"><Mic size={18} /></span>
+                    <span>
+                      <span className="sc-title">{s.title}</span>
+                      <span className="sc-desc">{s.who}</span>
+                    </span>
                   </button>
-                )}
-                {saveError && <div className="save-error"><X size={14} /><span>{saveError}</span></div>}
+                ))}
               </div>
-            )}
-          </div>
-        </section>
+              <p className="note">카메라를 켜면 상대방의 표정과 당신의 시선·말 속도를 함께 분석해요.
+              카메라가 부담된다면 끄고 텍스트로만 대화해도 괜찮아요 — 핵심은 연습하는 것.</p>
+            </>
+          )}
 
-        <section className="opponent-and-dialogue">
-          <OpponentPanel
-            opponent={scenario.opponent}
-            phase={phase}
-            currentLine={currentOpponentLine}
-            isSpeaking={isSpeaking}
-            turnNumber={turnNumber}
-            totalTurns={totalTurns}
-            muted={opponentMuted}
-            onToggleMute={() => setOpponentMuted((v) => !v)}
-          />
-          <DialogueTranscript
-            dialogue={dialogue}
-            liveTranscript={liveTranscript}
-            visible={isRecording || isFinished}
-          />
-        </section>
+          {scenario && (
+            <>
+              <div className="eyebrow">03 — {scenario.title}</div>
+              <h2 className="mid" tabIndex={-1}>{scenario.title}</h2>
 
-        <section className="insight-strip">
-          <div className="insight-icon"><Sparkles size={20} /></div>
-          <div>
-            <span className="eyebrow">사회적 리허설이 도와주는 것</span>
-            <strong>"잘해야 한다"보다 "한 번 해봤다"는 감각을 만들어요.</strong>
-          </div>
-          <button>리허설 가이드 보기 <ArrowRight size={16} /></button>
-        </section>
-        <footer>
-          <span>nudge on · 작은 신호가 다시 세상과 연결되는 순간</span>
-          <span>분석은 참고용이며, 당신을 평가하지 않아요.</span>
-        </footer>
+              <div className="rehearsal-layout">
+                <div>
+                  <OpponentPanel
+                    scenario={scenario}
+                    isSpeaking={ttsSpeaking || isSpeaking}
+                    isWaiting={isWaiting}
+                    isUserTurn={isUserTurn}
+                    currentLine={currentLine}
+                    turnNumber={userTurns}
+                    totalTurns={Math.max(4, userTurns + 2)}
+                    muted={muted}
+                    cameraOn={cameraOn}
+                    onToggleMute={() => setMuted((v) => !v)}
+                    onToggleCamera={() => setCameraOn((v) => !v)}
+                  />
+
+                  <div className="camera-card" style={{ marginTop: 16 }}>
+                    <div className="camera-header">
+                      <h3>나의 리허설</h3>
+                      <span className={`live-pill ${isSpeaking || isUserTurn ? 'rec' : ''}`}>
+                        {isSpeaking || isUserTurn ? '● LIVE' : 'READY'}
+                      </span>
+                    </div>
+                    <div className="camera-stage">
+                      {cameraOn ? (
+                        <video ref={videoRef} autoPlay muted playsInline />
+                      ) : (
+                        <div className="camera-placeholder">
+                          <CameraOff size={28} />
+                          <span>카메라가 꺼져 있어요</span>
+                        </div>
+                      )}
+                      {cameraOn && (isSpeaking || isUserTurn) && (
+                        <div className="camera-overlay">
+                          <span className={faceMetrics.faceDetected ? 'active' : ''}>
+                            <Eye size={11} /> {faceMetrics.faceDetected ? '시선 분석 중' : '얼굴 찾는 중'}
+                          </span>
+                          <span className={voiceMetrics.isActive ? 'active' : ''}>
+                            <Volume2 size={11} /> {voiceMetrics.isActive ? '음성 분석 중' : '대기'}
+                          </span>
+                        </div>
+                      )}
+                      {(isSpeaking || isUserTurn) && cameraOn && (
+                        <div className="live-meters">
+                          <div className="meter-row">
+                            <span>말속도</span>
+                            <div className="meter-bar"><i style={{ width: `${Math.min(100, (liveAverages.wpm / 200) * 100)}%` }} /></div>
+                            <b>{liveAverages.wpm}</b>
+                          </div>
+                          <div className="meter-row">
+                            <span>떨림</span>
+                            <div className="meter-bar"><i style={{ width: `${liveAverages.tremor}%`, background: liveAverages.tremor > 50 ? '#C9922F' : '#6F8F80' }} /></div>
+                            <b>{liveAverages.tremor}</b>
+                          </div>
+                          <div className="meter-row">
+                            <span>시선</span>
+                            <div className="meter-bar"><i style={{ width: `${liveAverages.gaze}%`, background: '#6F8F80' }} /></div>
+                            <b>{liveAverages.gaze}%</b>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="camera-controls">
+                      <button className={`cam-btn ${cameraOn ? '' : 'off'}`} onClick={() => setCameraOn((v) => !v)}>
+                        {cameraOn ? <Camera size={14} /> : <CameraOff size={14} />}
+                        <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
+                      </button>
+                      <button className="cam-btn" onClick={reset}>
+                        <RotateCcw size={14} />
+                        <span>다시 시작</span>
+                      </button>
+                      {isUserTurn && (
+                        <button className="cam-btn" onClick={finishRehearsal} style={{ borderColor: 'var(--sage)', color: 'var(--sage-deep)' }}>
+                          <Check size={14} />
+                          <span>연습 끝내기</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <DialogueTranscript
+                    messages={messages}
+                    busy={busy}
+                    portrait={scenario.portrait}
+                    opponentName={scenario.opponentName}
+                  />
+                  <div className="composer">
+                    <textarea
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="편한 말로 써도 돼요. 완벽하지 않아도 괜찮아요."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          send();
+                        }
+                      }}
+                    />
+                    <button className="btn" onClick={send} disabled={busy || phase !== 'user-turn'}>
+                      <Send size={15} />
+                    </button>
+                  </div>
+                  <div className="row" style={{ marginTop: 14 }}>
+                    <button className="btn ghost" onClick={finishRehearsal}>연습 끝내고 결과 보기</button>
+                  </div>
+                </div>
+              </div>
+
+              {showResults && feedback && (
+                <>
+                  <div className="score-row">
+                    <div className="score-card-mini">
+                      <div className="label">이번 리허설 점수</div>
+                      <div className="value">{feedback.overallScore}<span style={{ fontSize: 14, color: 'var(--ink-soft)' }}>/100</span></div>
+                      <div className="note-small">{feedback.overallScore >= 80 ? '좋아요' : feedback.overallScore >= 60 ? '괜찮아요' : '응원해요'}</div>
+                    </div>
+                    <div className="score-card-mini">
+                      <div className="label">대화 주고받음</div>
+                      <div className="value">{userTurns}번</div>
+                      <div className="note-small">자연스럽게 이어가는 연습</div>
+                    </div>
+                    <div className="score-card-mini">
+                      <div className="label">진행 시간</div>
+                      <div className="value">{elapsed}초</div>
+                      <div className="note-small">충분히 시도했어요</div>
+                    </div>
+                  </div>
+
+                  <div className="tips-section">
+                    <div className="tips-title"><Lightbulb size={16} /> AI 코치의 한마디</div>
+                    {feedback.tips.map((tip, i) => (
+                      <div className={`tip-item ${i === 0 ? 'featured' : ''}`} key={i}>
+                        <span>{String(i + 1).padStart(2, '0')}</span>
+                        <p>{tip}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="save-section">
+                    {savedId ? (
+                      <div className="save-success">
+                        <Check size={16} />
+                        <span>이번 리허설이 기록에 저장되었어요.</span>
+                      </div>
+                    ) : (
+                      <button className="save-btn" onClick={saveSession} disabled={isSaving}>
+                        {isSaving ? <RotateCcw size={16} className="spin-icon" /> : <Save size={16} />}
+                        <span>{isSaving ? '저장하는 중...' : '이번 리허설 저장하기'}</span>
+                      </button>
+                    )}
+                    {saveError && <div className="save-error">{saveError}</div>}
+                  </div>
+
+                  <div className="row">
+                    <button className="btn" onClick={reset}>다른 상황 연습하기</button>
+                  </div>
+                </>
+              )}
+
+              {!showResults && (
+                <p className="note">카메라를 켜면 상대방을 보며 연습할 수 있고, 당신의 말 속도·떨림·시선을 분석해요.
+                카메라가 부담된다면 끄고 텍스트로만 대화해도 괜찮아요.</p>
+              )}
+            </>
+          )}
+        </div>
       </main>
     </div>
   );
