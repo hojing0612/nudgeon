@@ -457,7 +457,9 @@ function buildQuestions(rows){
     if(!groups.has(id)) groups.set(id, {
       key:id,
       survey:(String(r.survey ?? '').trim() || 'legacy'),
+      domain:String(r.domain ?? '').trim(),
       flag:String(r.flag ?? '').trim().toUpperCase(),
+      required:String(r.required ?? '').trim(),
       showIf:String(r.show_if ?? '').trim(),
       order:Number(r.question_order)||999,
       q:String(r.question_text ?? '').trim(),
@@ -472,14 +474,16 @@ function buildQuestions(rows){
   });
   return [...groups.values()]
     .sort((a,b)=>a.order-b.order)
-    .map(q=>({key:q.key, survey:q.survey, flag:q.flag, showIf:q.showIf, q:q.q,
+    .map(q=>({key:q.key, survey:q.survey, domain:q.domain, flag:q.flag,
+      required:q.required, showIf:q.showIf, q:q.q,
       opts:q.opts.sort((a,b)=>a.order-b.order).map(o=>[o.label,o.value,o.score])}))
     .filter(q=>q.q && q.opts.length);
 }
 
 /* ═══ 2단계 자가진단: 군 판정 → 세부 Lv 산출 ═══ */
 
-const STAGE1   = ['legacy','warmup','s1'];
+/* Google Sheets의 활성 문항만 사용한다. legacy는 로딩 실패용 fallback에만 남긴다. */
+const STAGE1   = ['warmup','s1'];
 const STAGE2   = { hikikomori:'s2_hikikomori', isolation:'s2_isolation', boundary:'s2_profile' };
 const REL_KEYS = ['s1_meet','s1_alone','s1_family','s1_friend'];
 const BAND     = { hikikomori:[1,3], isolation:[2,4], boundary:[3,5] };
@@ -503,7 +507,7 @@ function shouldShow(q, answers){
   const [key, raw] = cond.split(neg ? '!=' : '=');
   const list = String(raw||'').split(',').map(v=>v.trim()).filter(Boolean);
   const got = answers[String(key||'').trim()];
-  if(got === undefined) return true;          /* 아직 안 물어본 문항이면 일단 보여준다 */
+  if(got === undefined) return false;         /* 선행 답변 전에는 조건부 문항을 숨긴다 */
   return neg ? !list.includes(got) : list.includes(got);
 }
 
@@ -569,6 +573,30 @@ function decideBarrier(a, group){
 function decideVision(a, group){
   const pre = group==='hikikomori' ? 'h_' : 'i_';
   return a.p_vision || a[pre+'need'] || a.vision || '아직 정하지 않았어요';
+}
+
+function answerLabel(key, value){
+  const q=ALL_QUESTIONS.find(item=>item.key===key);
+  return q?.opts.find(option=>option[1]===value)?.[0] || '';
+}
+
+function profileEvidence(a, group){
+  const pre=group==='hikikomori' ? 'h_' : 'i_';
+  const keys=group==='boundary'
+    ? ['s1_out','s1_meet','s1_alone','p_goal']
+    : ['s1_out',pre+'meal',pre+'sleep',pre+'nohelp'];
+  return keys.map(key=>{
+    const q=ALL_QUESTIONS.find(item=>item.key===key);
+    const label=answerLabel(key,a[key]);
+    return q && label ? `${q.domain || '응답'} · ${label}` : '';
+  }).filter(Boolean).slice(0,4);
+}
+
+function actionSizeFor(level){
+  if(level<=2) return '준비만 해도 끝나는 1–3분 행동';
+  if(level===3) return '집 안이나 집 앞에서 끝나는 짧은 행동';
+  if(level===4) return '짧은 연락이나 낮은 부담의 외부 행동';
+  return '실제 연결로 이어지는 한 단계 행동';
 }
 
 function buildMicrostepChains(rows){
@@ -683,11 +711,15 @@ async function initializeApp(){
 }
 
 function createDemoSteps(barrier){
-  return (DEMO_STEP_PRESETS[barrier] || DEMO_STEP_PRESETS.going).map(([chainId,difficulty])=>{
-    const group = MICROSTEP_CHAINS[chainId];
+  const level=state.profile?.level || 3;
+  const levelOffset=level<=2 ? -1 : 0;
+  return (DEMO_STEP_PRESETS[barrier] || DEMO_STEP_PRESETS.going).map(([chainId,startDifficulty])=>{
+    const group=MICROSTEP_CHAINS[chainId];
+    if(!group?.chain?.length) return null;
+    const difficulty=Math.max(0,Math.min(group.chain.length-1,startDifficulty+levelOffset));
     return {chainId, difficulty, text:group.chain[difficulty], why:group.why[difficulty],
             feature:group.feature, done:false, supportOpen:false, selectedSupport:0};
-  });
+  }).filter(Boolean);
 }
 
 const SCENARIOS = [
@@ -768,7 +800,8 @@ function buildProfile(a){
     const path = n<=2 ? 'micro' : BARRIERS[b].path;
     return { level:n, levelName:lv.name, levelLine:lv.line,
              group, barrier:b, barrierLabel:BARRIERS[b].label,
-             path, vision:decideVision(a,group) };
+             path, vision:decideVision(a,group), actionSize:actionSizeFor(n),
+             evidence:profileEvidence(a,group) };
   }
   let s2 = 0;
   s2 += ({a:0,b:1,c:2,d:3})[a.out]    ?? 0;
@@ -848,7 +881,7 @@ function vCheck(){
     <h2 class="mid" tabindex="-1">문항을 불러오지 못했어요</h2>
     <p class="note">잠시 후 새로고침해 주세요.</p>`;
 
-  const Q = QUESTIONS[Math.min(state.qi, total-1)];
+  const Q = QUESTIONS[state.qi] || visible[0];
   const sv = String(Q.survey || 'legacy');
   const stageName = sv==='warmup' ? '워밍업'
                   : sv==='s1'     ? '1차 조사'
@@ -898,12 +931,18 @@ function vReport(){
   <div class="eyebrow">01 — Report</div>
   <h2 class="mid" tabindex="-1">${p.levelLine}</h2>
   <div class="card">
-    <div class="qcount" style="letter-spacing:.1em">현재 연결 단계</div>
+    <div class="qcount" style="letter-spacing:.1em">현재 활동 범위</div>
     <div style="font-family:'Gowun Batang',serif; font-size:23px; margin:4px 0 16px">
       Lv.${p.level} · ${p.levelName}</div>
-    <div class="qcount" style="letter-spacing:.1em">지금 발목을 잡는 것</div>
-    <div style="font-family:'Gowun Batang',serif; font-size:23px; margin:4px 0 0">${p.barrierLabel}</div>
+    <div class="qcount" style="letter-spacing:.1em">주요 실행 장벽</div>
+    <div style="font-family:'Gowun Batang',serif; font-size:23px; margin:4px 0 16px">${p.barrierLabel}</div>
+    <div class="qcount" style="letter-spacing:.1em">지금 맞는 행동 크기</div>
+    <div style="font-family:'Gowun Batang',serif; font-size:20px; margin:4px 0 0">${p.actionSize}</div>
   </div>
+  ${p.evidence?.length ? `<div class="card">
+    <div class="qcount" style="letter-spacing:.1em">이렇게 판단한 근거</div>
+    ${p.evidence.map(item=>`<p style="margin:8px 0 0; font-size:14px; color:var(--ink-soft)">· ${item}</p>`).join('')}
+  </div>` : ''}
   <div class="card">
     ${r ? r.split('\n').filter(Boolean).map(l=>`<p style="margin:0 0 10px; font-size:15px">${l}</p>`).join('')
         : `<p style="margin:0; font-size:15px">
