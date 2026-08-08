@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type VoiceMetrics = {
   wpm: number;
-  tremor: number;
+  stabilityEstimate: number;
   volume: number;
   isActive: boolean;
 };
@@ -10,7 +10,7 @@ export type VoiceMetrics = {
 const SILENCE_THRESHOLD = 0.012;
 
 export function useVoiceAnalysis(active: boolean, micOn: boolean) {
-  const [metrics, setMetrics] = useState<VoiceMetrics>({ wpm: 0, tremor: 0, volume: 0, isActive: false });
+  const [metrics, setMetrics] = useState<VoiceMetrics>({ wpm: 0, stabilityEstimate: 0, volume: 0, isActive: false });
   const [error, setError] = useState<string | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -20,7 +20,7 @@ export function useVoiceAnalysis(active: boolean, micOn: boolean) {
   const syllableCountRef = useRef(0);
   const startTimeRef = useRef(0);
   const volumeHistoryRef = useRef<number[]>([]);
-  const tremorHistoryRef = useRef<number[]>([]);
+  const pitchHistoryRef = useRef<number[]>([]);
   const lastVoiceTimeRef = useRef(0);
 
   const stop = useCallback(() => {
@@ -30,29 +30,18 @@ export function useVoiceAnalysis(active: boolean, micOn: boolean) {
     sourceRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
-    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-      audioCtxRef.current.close().catch(() => {});
-    }
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') { audioCtxRef.current.close().catch(() => {}); }
     audioCtxRef.current = null;
     analyserRef.current = null;
   }, []);
 
   useEffect(() => {
-    if (!active || !micOn) {
-      stop();
-      if (!active) setMetrics({ wpm: 0, tremor: 0, volume: 0, isActive: false });
-      return;
-    }
-
+    if (!active || !micOn) { stop(); if (!active) setMetrics({ wpm: 0, stabilityEstimate: 0, volume: 0, isActive: false }); return; }
     let mounted = true;
-
     const setup = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (!mounted) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
+        if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         const ctx = new AudioCtx();
@@ -60,82 +49,41 @@ export function useVoiceAnalysis(active: boolean, micOn: boolean) {
         const source = ctx.createMediaStreamSource(stream);
         sourceRef.current = source;
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.4;
+        analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.4;
         source.connect(analyser);
         analyserRef.current = analyser;
         startTimeRef.current = performance.now();
         syllableCountRef.current = 0;
         volumeHistoryRef.current = [];
-        tremorHistoryRef.current = [];
-
+        pitchHistoryRef.current = [];
         const timeData = new Float32Array(analyser.fftSize);
-        const freqData = new Uint8Array(analyser.frequencyBinCount);
         let lastSyllableTime = 0;
-
         const tick = () => {
           if (!analyserRef.current || !audioCtxRef.current) return;
           analyserRef.current.getFloatTimeDomainData(timeData);
-
-          let sum = 0;
-          let zeroCrossings = 0;
-          for (let i = 0; i < timeData.length; i++) {
-            sum += timeData[i] * timeData[i];
-            if (i > 0 && timeData[i - 1] * timeData[i] < 0) zeroCrossings++;
-          }
+          let sum = 0, zeroCrossings = 0;
+          for (let i = 0; i < timeData.length; i++) { sum += timeData[i] * timeData[i]; if (i > 0 && timeData[i - 1] * timeData[i] < 0) zeroCrossings++; }
           const rms = Math.sqrt(sum / timeData.length);
           const volume = Math.min(1, rms * 3);
           const pitch = (zeroCrossings / 2) * (audioCtxRef.current.sampleRate / timeData.length);
-
-          if (rms > SILENCE_THRESHOLD) {
-            lastVoiceTimeRef.current = performance.now();
-            const now = performance.now();
-            if (now - lastSyllableTime > 220) {
-              syllableCountRef.current += 1;
-              lastSyllableTime = now;
-            }
-          }
-
-          volumeHistoryRef.current.push(volume);
-          if (volumeHistoryRef.current.length > 60) volumeHistoryRef.current.shift();
-
-          if (rms > SILENCE_THRESHOLD && pitch > 60) {
-            tremorHistoryRef.current.push(pitch);
-            if (tremorHistoryRef.current.length > 40) tremorHistoryRef.current.shift();
-          }
-
-          analyserRef.current.getByteFrequencyData(freqData);
+          if (rms > SILENCE_THRESHOLD) { lastVoiceTimeRef.current = performance.now(); const now = performance.now(); if (now - lastSyllableTime > 220) { syllableCountRef.current += 1; lastSyllableTime = now; } }
+          volumeHistoryRef.current.push(volume); if (volumeHistoryRef.current.length > 60) volumeHistoryRef.current.shift();
+          if (rms > SILENCE_THRESHOLD && pitch > 60) { pitchHistoryRef.current.push(pitch); if (pitchHistoryRef.current.length > 40) pitchHistoryRef.current.shift(); }
           const elapsedSec = Math.max(1, (performance.now() - startTimeRef.current) / 1000);
           const wpm = Math.round((syllableCountRef.current / elapsedSec) * 60 * 1.6);
-
-          let tremor = 0;
-          if (tremorHistoryRef.current.length > 5) {
-            const mean = tremorHistoryRef.current.reduce((a, b) => a + b, 0) / tremorHistoryRef.current.length;
-            const variance = tremorHistoryRef.current.reduce((a, b) => a + (b - mean) ** 2, 0) / tremorHistoryRef.current.length;
-            tremor = Math.min(100, Math.round((Math.sqrt(variance) / mean) * 100));
-          }
-
+          let stabilityEstimate = 50;
+          if (pitchHistoryRef.current.length > 5) { const mean = pitchHistoryRef.current.reduce((a, b) => a + b, 0) / pitchHistoryRef.current.length; const variance = pitchHistoryRef.current.reduce((a, b) => a + (b - mean) ** 2, 0) / pitchHistoryRef.current.length; const cv = Math.sqrt(variance) / mean; stabilityEstimate = Math.max(10, Math.min(100, Math.round(100 - cv * 100))); }
           const avgVolume = volumeHistoryRef.current.reduce((a, b) => a + b, 0) / volumeHistoryRef.current.length;
           const isSpeaking = performance.now() - lastVoiceTimeRef.current < 1500;
-
-          setMetrics({ wpm: Math.min(220, wpm), tremor, volume: Math.round(avgVolume * 100), isActive: isSpeaking });
-
+          setMetrics({ wpm: Math.min(220, wpm), stabilityEstimate, volume: Math.round(avgVolume * 100), isActive: isSpeaking });
           rafRef.current = requestAnimationFrame(tick);
         };
-
         rafRef.current = requestAnimationFrame(tick);
         setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '마이크에 접근할 수 없어요');
-      }
+      } catch { setError('마이크에 접근할 수 없어요. 텍스트로 대화를 계속할 수 있어요.'); }
     };
-
     setup();
-
-    return () => {
-      mounted = false;
-      stop();
-    };
+    return () => { mounted = false; stop(); };
   }, [active, micOn, stop]);
 
   return { metrics, error };

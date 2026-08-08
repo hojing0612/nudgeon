@@ -18,38 +18,61 @@ type SpeechRecognitionInstance = {
   maxAlternatives: number;
   start: () => void;
   stop: () => void;
+  abort: () => void;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
 };
+
+type SRConstructor = new () => SpeechRecognitionInstance;
+
+function getSRConstructor(): SRConstructor | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as {
+    SpeechRecognition?: SRConstructor;
+    webkitSpeechRecognition?: SRConstructor;
+  };
+  return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+export function isSpeechRecognitionSupported(): boolean {
+  return getSRConstructor() !== null;
+}
 
 export function useSpeechRecognition(active: boolean) {
   const [transcript, setTranscript] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const finalTextRef = useRef('');
+  const shouldListenRef = useRef(false);
+  const restartCountRef = useRef(0);
+  const supportedRef = useRef<boolean>(isSpeechRecognitionSupported());
 
   const stop = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
+    shouldListenRef.current = false;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch { /* noop */ }
+    }
+    setIsListening(false);
   }, []);
 
-  useEffect(() => {
-    if (!active) {
-      stop();
-      if (!active) {
-        setTranscript('');
-        finalTextRef.current = '';
-      }
+  const start = useCallback(() => {
+    const SR = getSRConstructor();
+    if (!SR) {
+      setError('이 브라우저에서는 음성 입력을 지원하지 않아요. 텍스트로 입력해 주세요.');
       return;
     }
 
-    const SR =
-      (window as unknown as { SpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch { /* noop */ }
+    }
 
-    if (!SR) return;
+    shouldListenRef.current = true;
+    restartCountRef.current = 0;
+    setError(null);
 
-    const recognition = new SR() as unknown as SpeechRecognitionInstance;
+    const recognition = new SR();
     recognition.lang = 'ko-KR';
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -68,17 +91,46 @@ export function useSpeechRecognition(active: boolean) {
       setTranscript(finalTextRef.current + interim);
     };
 
-    recognition.onend = () => {
-      // Auto-restart if still active (recognition stops after silence)
+    recognition.onerror = (event: { error: string }) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        shouldListenRef.current = false;
+        setError('마이크 권한이 거부되었어요. 텍스트로 입력해 주세요.');
+        setIsListening(false);
+      }
     };
 
-    recognition.start();
+    recognition.onend = () => {
+      setIsListening(false);
+      if (shouldListenRef.current && restartCountRef.current < 5) {
+        restartCountRef.current += 1;
+        try {
+          recognition.start();
+          setIsListening(true);
+        } catch {
+          shouldListenRef.current = false;
+        }
+      } else if (shouldListenRef.current) {
+        shouldListenRef.current = false;
+      }
+    };
+
     recognitionRef.current = recognition;
 
-    return () => {
-      recognition.stop();
-      recognitionRef.current = null;
-    };
+    try {
+      recognition.start();
+      setIsListening(true);
+    } catch {
+      setError('음성 인식을 시작할 수 없어요. 텍스트로 입력해 주세요.');
+      shouldListenRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!active) {
+      stop();
+      setTranscript('');
+      finalTextRef.current = '';
+    }
   }, [active, stop]);
 
   const reset = useCallback(() => {
@@ -86,5 +138,13 @@ export function useSpeechRecognition(active: boolean) {
     setTranscript('');
   }, []);
 
-  return { transcript, reset, stop };
+  return {
+    transcript,
+    isListening,
+    error,
+    supported: supportedRef.current,
+    start,
+    stop,
+    reset,
+  };
 }
