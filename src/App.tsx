@@ -582,6 +582,11 @@ function App() {
       <main className="stage">
         <div className="col">
           {!scenario && (
+            <a className="back-home" href="/" aria-label="NudgeOn 홈으로 돌아가기">
+              ← NudgeOn 전체 여정으로
+            </a>
+          )}
+          {!scenario && (
             <>
               <div className="eyebrow">03 — Social Rehearsal</div>
               <h2 className="mid" tabIndex={-1}>실전 말고, 먼저 여기서 한 번</h2>
