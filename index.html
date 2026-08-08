@@ -812,7 +812,8 @@ function buildProfile(a){
   const b = BARRIERS[a.barrier] ? a.barrier : 'going';
   return { level:n, levelName:lv.name, levelLine:lv.line,
            group:'legacy', barrier:b, barrierLabel:BARRIERS[b].label,
-           path:BARRIERS[b].path, vision:a.vision || '아직 정하지 않았어요' };
+           path:BARRIERS[b].path, vision:a.vision || '아직 정하지 않았어요',
+           actionSize:actionSizeFor(n), evidence:[] };
 }
 
 function render(){
