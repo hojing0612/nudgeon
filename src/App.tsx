@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Camera,
   CameraOff,
   Check,
@@ -28,6 +29,7 @@ import { DialogueTranscript } from '@/components/DialogueTranscript';
 
 type Phase = 'idle' | 'prep' | 'speaking' | 'user-turn' | 'post-burden' | 'finished';
 type Readiness = 'hard' | 'small' | 'now' | null;
+const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
 
 type AISafetyCheck = {
   reply: string;
@@ -234,6 +236,17 @@ function App() {
   }, [phase]);
 
   useEffect(() => {
+    const isActive = phase === 'speaking' || phase === 'user-turn';
+    if (!isActive) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeLeaving);
+    return () => window.removeEventListener('beforeunload', warnBeforeLeaving);
+  }, [phase]);
+
+  useEffect(() => {
     if (!cameraOn || !navigator.mediaDevices?.getUserMedia) return;
     let mounted = true;
     navigator.mediaDevices
@@ -407,11 +420,28 @@ function App() {
   }, [stopTTS, stopSpeech]);
 
   const completePostBurden = useCallback(() => {
+    if (scenario) {
+      try {
+        localStorage.setItem(REHEARSAL_SUMMARY_KEY, JSON.stringify({
+          savedAt: new Date().toISOString(),
+          scenarioId: scenario.id,
+          scenarioTitle: scenario.title,
+          burdenBefore,
+          burdenAfter,
+          readiness,
+          completedTurns: messages.filter((message) => message.role === 'me').length,
+          promptHelpCount,
+          rewriteCount,
+        }));
+      } catch {
+        // Private browsing or device policy may disable local storage.
+      }
+    }
     setPhase('finished');
     setSavedId(null);
     setSaveError(null);
     setConsentTranscript(false);
-  }, []);
+  }, [scenario, burdenBefore, burdenAfter, readiness, messages, promptHelpCount, rewriteCount]);
 
   const reset = useCallback(() => {
     setScenario(null);
@@ -441,6 +471,29 @@ function App() {
     engagementAvgRef.current = [];
     volumeAvgRef.current = [];
   }, [stopTTS, stopSpeech]);
+
+  const goToPreviousStep = useCallback(() => {
+    if (!scenario || phase === 'idle') {
+      window.location.href = '/?screen=micro';
+      return;
+    }
+    if (phase === 'prep') {
+      reset();
+      return;
+    }
+    if (phase === 'speaking' || phase === 'user-turn') {
+      if (!window.confirm('현재 대화는 자동 저장되지 않아요. 상황 선택으로 돌아갈까요?')) return;
+      reset();
+      return;
+    }
+    if (phase === 'post-burden') {
+      setPhase('user-turn');
+      return;
+    }
+    if (phase === 'finished') {
+      setPhase('post-burden');
+    }
+  }, [scenario, phase, reset]);
 
   const handleGetExamples = useCallback(async () => {
     if (!scenario) return;
@@ -581,11 +634,9 @@ function App() {
 
       <main className="stage">
         <div className="col">
-          {!scenario && (
-            <a className="back-home" href="/" aria-label="NudgeOn 홈으로 돌아가기">
-              ← NudgeOn 전체 여정으로
-            </a>
-          )}
+          <button className="back-home" type="button" onClick={goToPreviousStep} aria-label="이전 단계로 돌아가기">
+            <ArrowLeft size={14} /> 이전 단계
+          </button>
           {!scenario && (
             <>
               <div className="eyebrow">03 — Social Rehearsal</div>
@@ -875,7 +926,10 @@ function App() {
                 {saveError && <p className="save-error">{saveError}</p>}
               </div>
 
-              <div className="row"><button className="btn" onClick={reset}>다른 상황 연습하기</button></div>
+              <div className="row">
+                <button className="btn" onClick={() => { window.location.href = '/?screen=connect'; }}>AI 연결로 계속하기</button>
+                <button className="btn quiet" onClick={reset}>다른 상황 연습하기</button>
+              </div>
             </>
           )}
         </div>
