@@ -61,12 +61,15 @@ body{
   color:var(--ink-soft); text-align:center; margin-top:9px;
 }
 
-.journey{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:1px}
+.journey{margin:0; padding:0; display:flex; flex-direction:column; gap:1px}
 .jstep{
+  width:100%; border:0; background:transparent; font:inherit; text-align:left; cursor:pointer;
   display:grid; grid-template-columns:26px 1fr; gap:11px; align-items:baseline;
   padding:9px 10px; border-radius:9px; color:var(--ink-soft);
   font-size:14px; transition:background .2s,color .2s;
 }
+.jstep:hover{background:var(--mist); color:var(--ink)}
+.jstep:focus-visible{outline:2px solid var(--sage); outline-offset:2px}
 .jstep .num{font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.05em}
 .jstep[data-state="done"]{color:var(--sage-deep)}
 .jstep[data-state="done"] .num::after{content:" ✓"}
