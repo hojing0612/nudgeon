@@ -626,8 +626,9 @@ function renderRail(){
   document.getElementById('journey').innerHTML = SCREENS.map((s,i)=>{
     const done = state.visited.has(s) && i !== ci;
     const st = i===ci ? 'now' : (done ? 'done' : 'todo');
-    return `<li class="jstep" data-state="${st}">
-      <span class="num">0${i+1}</span><span>${SCREEN_NAMES[i]}</span></li>`;
+    return `<button class="jstep" type="button" data-state="${st}" data-journey-screen="${s}"
+      ${i===ci ? 'aria-current="step"' : ''}>
+      <span class="num">0${i+1}</span><span>${SCREEN_NAMES[i]}</span></button>`;
   }).join('');
 
   const p = state.visited.size / 5;
@@ -957,6 +958,15 @@ function vRecord(){
    9. 이벤트 연결
    ═══════════════════════════════════════════════════════════ */
 function bind(){
+  document.querySelectorAll('[data-journey-screen]').forEach(button=>button.onclick=()=>{
+    const target=button.dataset.journeyScreen;
+    if(target==='rehearsal'){
+      persistProgress();
+      window.location.href='/rehearsal';
+      return;
+    }
+    if(canOpenScreen(target)) go(target);
+  });
   stage.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
   stage.querySelectorAll('[data-prev-step]').forEach(b=>b.onclick=navigateBack);
   stage.querySelectorAll('[data-resume-saved]').forEach(b=>b.onclick=()=>{
