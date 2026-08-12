@@ -418,6 +418,7 @@ async function initializeApp(){
     state.screen = 'resume';
   }
   render();
+  if(state.screen==='connect') loadPolicies();
 }
 
 function createDemoSteps(barrier){
@@ -444,7 +445,7 @@ const SCENARIOS = [
     open:'네, 청년도전지원사업 담당입니다. 문의 주신 내용이 어떤 건가요?' }
 ];
 
-/* 예시 데이터입니다 — 실제 서비스에서는 공공데이터 API로 대체 */
+/* 온통청년 API가 꺼져 있거나 실패했을 때만 사용하는 대비 데이터 */
 const RESOURCES = [
   { name:'청년미래센터 (고립·은둔 청년 지원)', tag:'공공 · 전담기관', levels:[1,2,3],
     why:'집 밖 활동이 적은 단계부터 전담 사례관리로 이어지는 곳이라, 지금 단계에서 시작점으로 맞아요.' },
@@ -467,7 +468,7 @@ const state = {
   qi:0, answers:{},
   profile:null, report:null, group:null,
   micro:[], scenario:null, messages:[], busy:false,
-  draft:null, visited:new Set()
+  draft:null, resources:[], resourcesLoading:false, resourcesError:null, visited:new Set()
 };
 
 const stage = document.getElementById('stage');
@@ -478,7 +479,8 @@ const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,group:null,
-    micro:[],scenario:null,messages:[],busy:false,draft:null,visited:new Set()});
+    micro:[],scenario:null,messages:[],busy:false,draft:null,
+    resources:[],resourcesLoading:false,resourcesError:null,visited:new Set()});
   if(ALL_QUESTIONS.length){
     const base=questionsOf(STAGE1);
     QUESTIONS=base.length ? base : ALL_QUESTIONS;
@@ -840,17 +842,20 @@ function vRehearsal(){
 /* ── 04 AI 연결 ── */
 function vConnect(){
   const p = state.profile;
-  const list = RESOURCES.filter(r=>r.levels.includes(p.level)).slice(0,3);
+  const fallback = RESOURCES.filter(r=>r.levels.includes(p.level)).slice(0,3);
+  const list = state.resources.length ? state.resources : fallback;
   return `
   <div class="eyebrow">04 — Smart Matching</div>
   <h2 class="mid" tabindex="-1">지금 단계에서 문턱이 가장 낮은 곳 3곳</h2>
   <p class="lede">전부 보여주면 오히려 못 고르게 돼요. Lv.${p.level} · ${p.barrierLabel} 기준으로
   <b>지금 신청 가능한 것만</b> 남겼어요.</p>
+  ${state.resourcesLoading ? `<div class="card"><p style="margin:0">온통청년에서 지금 신청할 수 있는 정책을 찾고 있어요.</p></div>` : ''}
   ${list.map(r=>`
     <div class="res">
-      <span class="tag">${r.tag}</span>
-      <h3>${r.name}</h3>
-      <p><b style="color:var(--ink)">왜 나에게?</b> ${r.why}</p>
+      <span class="tag">${escapeHtml(r.tag)}</span>
+      <h3>${escapeHtml(r.name)}</h3>
+      <p><b style="color:var(--ink)">왜 나에게?</b> ${escapeHtml(r.why)}</p>
+      ${safeHttpUrl(r.url) ? `<div class="row" style="margin-top:12px"><a class="btn quiet" href="${escapeHtml(safeHttpUrl(r.url))}" target="_blank" rel="noopener noreferrer">공식 페이지 보기</a></div>` : ''}
     </div>`).join('')}
   <div class="card" style="margin-top:20px">
     <b style="font-size:15px">첫 문의 문장, 대신 써드릴게요</b>
@@ -863,9 +868,61 @@ function vConnect(){
     : `<div class="row" style="margin-top:14px"><button class="btn" data-draft="1">문의 문장 만들기</button></div>`}
   </div>
   <div class="row"><button class="btn" data-go="record">오늘 한 일 정리하기</button></div>
-  <p class="note">위 기관 목록은 <b>시연용 예시 데이터</b>입니다. 실제 서비스에서는 온통청년·복지로 등
-  공공데이터 API를 정기 수집해 벡터 DB에 넣고, 자격 요건은 AI가 아니라 규칙 필터로 걸러야 해요.
-  자격 판정을 LLM에 맡기면 틀린 안내를 자신 있게 하게 됩니다.</p>`;
+  <p class="note">${state.resourcesError
+    ? '온통청년 연결이 원활하지 않아 현재는 대비 데이터를 보여드리고 있어요.'
+    : '온통청년의 정책 정보를 바탕으로 보여드려요.'}
+  자격 여부는 참고용이며, 최종 신청 가능 여부는 운영기관에서 확인해주세요.</p>`;
+}
+
+function escapeHtml(value){
+  return String(value ?? '').replace(/[&<>"']/g,character=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+  })[character]);
+}
+
+function safeHttpUrl(value){
+  try{
+    const url=new URL(value);
+    return ['http:','https:'].includes(url.protocol) ? url.href : '';
+  }catch{return '';}
+}
+
+function policyKeyword(profile){
+  const byVision = {work:'취업', study:'교육', social:'청년센터'};
+  if(profile.barrier==='energy') return '복지';
+  return byVision[profile.vision] || '청년지원';
+}
+
+function policyReason(policy, profile){
+  const target = policy.support || policy.summary || '지원 내용과 신청 방법을 확인할 수 있어요.';
+  const shortTarget = target.length > 110 ? target.slice(0,107)+'…' : target;
+  return `Lv.${profile.level} · ${profile.barrierLabel} 단계에서 살펴볼 수 있는 ${policy.category || '청년지원'} 정책이에요. ${shortTarget}`;
+}
+
+async function loadPolicies(){
+  if(state.resourcesLoading || state.resources.length) return;
+  state.resourcesLoading=true;
+  state.resourcesError=null;
+  render();
+  try{
+    const keyword=policyKeyword(state.profile);
+    const response=await fetch(`/api/policies?keyword=${encodeURIComponent(keyword)}&pageSize=20`);
+    if(!response.ok) throw new Error('API '+response.status);
+    const data=await response.json();
+    state.resources=(data.policies||[]).slice(0,3).map(policy=>({
+      name:policy.title,
+      tag:[policy.category,policy.subcategory].filter(Boolean).join(' · ') || '온통청년',
+      why:policyReason(policy,state.profile),
+      url:policy.applicationUrl || ''
+    }));
+    if(!state.resources.length) throw new Error('검색 결과 없음');
+  }catch(error){
+    console.warn('온통청년 정책을 불러오지 못했습니다.',error);
+    state.resourcesError='정책 데이터를 불러오지 못했어요';
+  }finally{
+    state.resourcesLoading=false;
+    if(state.screen==='connect') render();
+  }
 }
 
 /* ── 05 기록 ── */
@@ -906,6 +963,7 @@ function bind(){
     state.screen=state.resumeScreen||'check'; state.resumeScreen=null;
     if(state.screen==='rehearsal'){ persistProgress(); window.location.href='/rehearsal'; return; }
     render();
+    if(state.screen==='connect') loadPolicies();
   });
   stage.querySelectorAll('[data-start-fresh]').forEach(b=>b.onclick=()=>clearProgress('intro'));
   stage.querySelectorAll('[data-clear-progress]').forEach(b=>b.onclick=()=>{
@@ -974,6 +1032,7 @@ function go(s){
   state.screen = s;
   render();
   if(s==='micro' && !state.micro.length) loadSteps();
+  if(s==='connect') loadPolicies();
 }
 
 function navigateBack(){
