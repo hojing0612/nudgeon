@@ -40,7 +40,7 @@ export function OpponentPanel({
       </div>
       <div className="opponent-controls">
         <button className={`opp-btn ${muted ? 'muted' : 'active'}`} onClick={onToggleMute} aria-label={muted ? '음소거 해제' : '음소거'}>{muted ? <MicOff size={15} /> : <Volume2 size={15} />}<span>{muted ? '음소거' : '소리 켜짐'}</span></button>
-        <button className={`opp-btn ${cameraOn ? 'active' : ''}`} onClick={onToggleCamera} aria-label={cameraOn ? '카메라 끄기' : '카메라 켜기'}>{cameraOn ? <Camera size={15} /> : <CameraOff size={15} />}<span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span></button>
+        <button className={`opp-btn ${cameraOn ? 'active' : ''}`} onClick={onToggleCamera} aria-label={cameraOn ? '카메라 끄기' : '카메라 켜기'}>{cameraOn ? <CameraOff size={15} /> : <Camera size={15} />}<span>{cameraOn ? '카메라 끄기' : '카메라 켜기'}</span></button>
       </div>
     </div>
   );

@@ -633,7 +633,9 @@ function renderRail(){
       <span class="num">0${i+1}</span><span>${SCREEN_NAMES[i]}</span></button>`;
   }).join('');
 
-  const p = state.visited.size / 5;
+  const windowScreen = state.screen === 'resume' ? state.resumeScreen : cur;
+  const windowIndex = SCREENS.indexOf(windowScreen);
+  const p = windowIndex >= 0 ? (windowIndex + 1) / SCREENS.length : 0;
   document.documentElement.style.setProperty('--open', p.toFixed(2));
   const notes = ['커튼은 아직 닫혀 있어요','조금 열렸어요','빛이 들어오고 있어요',
                  '창밖이 보여요','거의 다 열렸어요','창문이 열렸어요'];
@@ -734,12 +736,12 @@ function vReport(){
   <h2 class="mid" tabindex="-1">${p.levelLine}</h2>
   <div class="card">
     <div class="qcount" style="letter-spacing:.1em">현재 활동 범위</div>
-    <div style="font-family:'Gowun Batang',serif; font-size:23px; margin:4px 0 16px">
+    <div style="font-size:23px; font-weight:500; margin:4px 0 16px">
       Lv.${p.level} · ${p.levelName}</div>
     <div class="qcount" style="letter-spacing:.1em">주요 실행 장벽</div>
-    <div style="font-family:'Gowun Batang',serif; font-size:23px; margin:4px 0 16px">${p.barrierLabel}</div>
+    <div style="font-size:23px; font-weight:500; margin:4px 0 16px">${p.barrierLabel}</div>
     <div class="qcount" style="letter-spacing:.1em">지금 맞는 행동 크기</div>
-    <div style="font-family:'Gowun Batang',serif; font-size:20px; margin:4px 0 0">${p.actionSize}</div>
+    <div style="font-size:20px; font-weight:500; margin:4px 0 0">${p.actionSize}</div>
   </div>
   ${p.evidence?.length ? `<div class="card">
     <div class="qcount" style="letter-spacing:.1em">이렇게 판단한 근거</div>

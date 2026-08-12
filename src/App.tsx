@@ -828,8 +828,8 @@ function App() {
                   이 데이터는 의학적·심리학적 진단이 아닌 연습 보조용 추정치예요.
                 </p>
                 <button className={`cam-btn ${cameraOn ? '' : 'off'}`} onClick={() => setCameraOn((v) => !v)}>
-                  {cameraOn ? <Camera size={14} /> : <CameraOff size={14} />}
-                  <span>{cameraOn ? '카메라 켜기' : '카메라 끄기 (기본)'}</span>
+                  {cameraOn ? <CameraOff size={14} /> : <Camera size={14} />}
+                  <span>{cameraOn ? '카메라 끄기' : '카메라 켜기'}</span>
                 </button>
               </div>
 
@@ -889,8 +889,8 @@ function App() {
                     </div>
                     <div className="camera-controls">
                       <button className={`cam-btn ${cameraOn ? '' : 'off'}`} onClick={() => setCameraOn((v) => !v)} aria-label={cameraOn ? '카메라 끄기' : '카메라 켜기'}>
-                        {cameraOn ? <Camera size={14} /> : <CameraOff size={14} />}
-                        <span>{cameraOn ? '카메라 켜짐' : '카메라 꺼짐'}</span>
+                        {cameraOn ? <CameraOff size={14} /> : <Camera size={14} />}
+                        <span>{cameraOn ? '카메라 끄기' : '카메라 켜기'}</span>
                       </button>
                       <button className="cam-btn" onClick={reset} aria-label="다시 시작"><RotateCcw size={14} /><span>다시 시작</span></button>
                     </div>
