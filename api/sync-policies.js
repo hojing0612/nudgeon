@@ -13,8 +13,19 @@ function categoryFor(policy) {
 
 function periodStatus(policy) {
   const code = String(policy.aplyPrdSeCd || '');
+  const text = String(policy.aplyYmd || '');
   if (code === '0057002') return { status: 'always', always: true };
   if (code === '0057003') return { status: 'closed', always: false };
+  if (/상시|수시/.test(text)) return { status: 'always', always: true };
+  const dates = [...text.matchAll(/(20\d{2})[.\-/년]?\s*(\d{1,2})[.\-/월]?\s*(\d{1,2})/g)]
+    .map(([, y, m, d]) => new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59))
+    .filter(date => !Number.isNaN(date.getTime()));
+  if (dates.length >= 2) {
+    const now = new Date();
+    if (now < dates[0]) return { status: 'upcoming', always: false };
+    if (now <= dates[dates.length - 1]) return { status: 'open', always: false };
+    return { status: 'closed', always: false };
+  }
   return { status: 'unknown', always: false };
 }
 
