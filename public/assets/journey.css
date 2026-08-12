@@ -229,6 +229,22 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
   font-size:14.5px; line-height:1.75; white-space:pre-wrap;
 }
 
+/* 기록·성장 */
+.record-progress-head{display:flex; justify-content:space-between; gap:16px; align-items:center}
+.record-progress-head span{font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-soft)}
+.record-track{height:9px; background:var(--mist); border-radius:999px; overflow:hidden; margin:14px 0 10px}
+.record-track i{display:block; height:100%; border-radius:inherit; background:var(--sage-deep); transition:width .5s ease}
+.record-progress p,.next-action-card p{margin:0; font-size:13px; color:var(--ink-soft)}
+.record-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:12px 0}
+.record-stat{border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:17px 18px; min-height:92px}
+.record-stat span,.record-stat small{display:block; font-size:12px; color:var(--ink-soft)}
+.record-stat b{display:block; margin-top:7px; font-size:17px}
+.record-stat small{margin-top:5px}
+.next-action-list{display:grid; gap:8px; margin-top:15px}
+.next-action{display:flex; justify-content:space-between; align-items:center; width:100%; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); padding:12px 14px; font:inherit; font-size:14px; text-align:left; cursor:pointer}
+.next-action:hover,.next-action[aria-pressed="true"]{border-color:var(--sage); background:var(--mist)}
+.saved-next{border-radius:11px; padding:13px 16px; background:var(--amber-soft); font-size:13.5px; margin-top:12px}
+
 .note{
   font-size:12.5px; color:var(--ink-soft); border-left:2px solid var(--line);
   padding-left:13px; margin-top:26px; line-height:1.65;
@@ -244,3 +260,4 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
   .window-note,.rail-foot{display:none}
   .stage{padding:36px 22px 72px}
 }
+@media (max-width:560px){.record-grid{grid-template-columns:1fr}}
