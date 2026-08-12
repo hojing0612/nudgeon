@@ -30,6 +30,46 @@ import { DialogueTranscript } from '@/components/DialogueTranscript';
 type Phase = 'idle' | 'prep' | 'speaking' | 'user-turn' | 'post-burden' | 'finished';
 type Readiness = 'hard' | 'small' | 'now' | null;
 const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
+const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
+
+type RehearsalProgress = {
+  scenarioId: string | null;
+  phase: Phase;
+  messages: ChatMessage[];
+  currentLine: string;
+  inputText: string;
+  burdenBefore: number | null;
+  burdenAfter: number | null;
+  readiness: Readiness;
+  selectedNextStep: string | null;
+  promptHelpCount: number;
+  rewriteCount: number;
+  elapsed: number;
+};
+
+function loadRehearsalProgress(): RehearsalProgress | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REHEARSAL_PROGRESS_KEY) || 'null');
+    if (!saved || !['idle', 'prep', 'speaking', 'user-turn', 'post-burden', 'finished'].includes(saved.phase)) return null;
+    return {
+      scenarioId: typeof saved.scenarioId === 'string' ? saved.scenarioId : null,
+      // 음성 재생 중 페이지를 떠났다면 돌아왔을 때 사용자 차례로 안전하게 재개해요.
+      phase: saved.phase === 'speaking' ? 'user-turn' : saved.phase,
+      messages: Array.isArray(saved.messages) ? saved.messages : [],
+      currentLine: typeof saved.currentLine === 'string' ? saved.currentLine : '',
+      inputText: typeof saved.inputText === 'string' ? saved.inputText : '',
+      burdenBefore: Number.isFinite(saved.burdenBefore) ? saved.burdenBefore : null,
+      burdenAfter: Number.isFinite(saved.burdenAfter) ? saved.burdenAfter : null,
+      readiness: ['hard', 'small', 'now'].includes(saved.readiness) ? saved.readiness : null,
+      selectedNextStep: typeof saved.selectedNextStep === 'string' ? saved.selectedNextStep : null,
+      promptHelpCount: Number(saved.promptHelpCount) || 0,
+      rewriteCount: Number(saved.rewriteCount) || 0,
+      elapsed: Number(saved.elapsed) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
 
 type AISafetyCheck = {
   reply: string;
@@ -174,25 +214,28 @@ JSON 형식으로 출력: {"rewritten": "다듬어진 문장"}`,
 }
 
 function App() {
+  const restoredProgressRef = useRef<RehearsalProgress | null>(loadRehearsalProgress());
+  const restoredProgress = restoredProgressRef.current;
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [scenario, setScenario] = useState<Scenario | null>(null);
-  const [phase, setPhase] = useState<Phase>('idle');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [scenario, setScenario] = useState<Scenario | null>(() =>
+    SCENARIOS.find((item) => item.id === restoredProgress?.scenarioId) || null);
+  const [phase, setPhase] = useState<Phase>(restoredProgress?.phase || 'idle');
+  const [messages, setMessages] = useState<ChatMessage[]>(restoredProgress?.messages || []);
   const [busy, setBusy] = useState(false);
-  const [currentLine, setCurrentLine] = useState('');
+  const [currentLine, setCurrentLine] = useState(restoredProgress?.currentLine || '');
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [inputText, setInputText] = useState('');
+  const [elapsed, setElapsed] = useState(restoredProgress?.elapsed || 0);
+  const [inputText, setInputText] = useState(restoredProgress?.inputText || '');
 
-  const [burdenBefore, setBurdenBefore] = useState<number | null>(null);
-  const [burdenAfter, setBurdenAfter] = useState<number | null>(null);
-  const [readiness, setReadiness] = useState<Readiness>(null);
-  const [selectedNextStep, setSelectedNextStep] = useState<string | null>(null);
+  const [burdenBefore, setBurdenBefore] = useState<number | null>(restoredProgress?.burdenBefore ?? null);
+  const [burdenAfter, setBurdenAfter] = useState<number | null>(restoredProgress?.burdenAfter ?? null);
+  const [readiness, setReadiness] = useState<Readiness>(restoredProgress?.readiness ?? null);
+  const [selectedNextStep, setSelectedNextStep] = useState<string | null>(restoredProgress?.selectedNextStep ?? null);
 
-  const [promptHelpCount, setPromptHelpCount] = useState(0);
-  const [rewriteCount, setRewriteCount] = useState(0);
+  const [promptHelpCount, setPromptHelpCount] = useState(restoredProgress?.promptHelpCount || 0);
+  const [rewriteCount, setRewriteCount] = useState(restoredProgress?.rewriteCount || 0);
   const responseLatenciesRef = useRef<number[]>([]);
   const opponentFinishTimeRef = useRef<number>(0);
   const userStartedRef = useRef(false);
@@ -281,6 +324,19 @@ function App() {
   useEffect(() => {
     if (speechTranscript) setInputText(speechTranscript);
   }, [speechTranscript]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REHEARSAL_PROGRESS_KEY, JSON.stringify({
+        scenarioId: scenario?.id || null, phase, messages, currentLine, inputText,
+        burdenBefore, burdenAfter, readiness, selectedNextStep,
+        promptHelpCount, rewriteCount, elapsed,
+      } satisfies RehearsalProgress));
+    } catch {
+      // Private browsing or device policy may disable local storage.
+    }
+  }, [scenario, phase, messages, currentLine, inputText, burdenBefore, burdenAfter,
+    readiness, selectedNextStep, promptHelpCount, rewriteCount, elapsed]);
 
   useEffect(() => {
     if (phase === 'user-turn' && opponentFinishTimeRef.current > 0 && !userStartedRef.current) {
@@ -444,6 +500,7 @@ function App() {
   }, [scenario, burdenBefore, burdenAfter, readiness, messages, promptHelpCount, rewriteCount]);
 
   const reset = useCallback(() => {
+    localStorage.removeItem(REHEARSAL_PROGRESS_KEY);
     setScenario(null);
     setMessages([]);
     setPhase('idle');
@@ -470,6 +527,12 @@ function App() {
     stabilityAvgRef.current = [];
     engagementAvgRef.current = [];
     volumeAvgRef.current = [];
+  }, [stopTTS, stopSpeech]);
+
+  const moveToJourneyStep = useCallback((screen: 'check' | 'micro' | 'connect' | 'record') => {
+    stopTTS();
+    stopSpeech();
+    window.location.href = `/home.html?screen=${screen}`;
   }, [stopTTS, stopSpeech]);
 
   const goToPreviousStep = useCallback(() => {
@@ -618,13 +681,13 @@ function App() {
           <div className="window-note">{scenario ? '빛이 들어오고 있어요' : '커튼은 아직 닫혀 있어요'}</div>
         </div>
 
-        <ul className="journey">
-          <li className="jstep" data-state="done"><span className="num">01</span><span>자가진단</span></li>
-          <li className="jstep" data-state="done"><span className="num">02</span><span>마이크로스텝</span></li>
-          <li className="jstep" data-state="now"><span className="num">03</span><span>사회적 리허설</span></li>
-          <li className="jstep" data-state="todo"><span className="num">04</span><span>AI 연결</span></li>
-          <li className="jstep" data-state="todo"><span className="num">05</span><span>기록·성장</span></li>
-        </ul>
+        <nav className="journey" aria-label="NudgeOn 여정 단계">
+          <button className="jstep" data-state="done" onClick={() => moveToJourneyStep('check')}><span className="num">01</span><span>자가진단</span></button>
+          <button className="jstep" data-state="done" onClick={() => moveToJourneyStep('micro')}><span className="num">02</span><span>마이크로스텝</span></button>
+          <button className="jstep" data-state="now" aria-current="step"><span className="num">03</span><span>사회적 리허설</span></button>
+          <button className="jstep" data-state="todo" onClick={() => moveToJourneyStep('connect')}><span className="num">04</span><span>AI 연결</span></button>
+          <button className="jstep" data-state="todo" onClick={() => moveToJourneyStep('record')}><span className="num">05</span><span>기록·성장</span></button>
+        </nav>
 
         <div className="rail-foot">
           이 화면은 공모전 시연용 프로토타입입니다.<br />
@@ -927,7 +990,7 @@ function App() {
               </div>
 
               <div className="row">
-                <button className="btn" onClick={() => { window.location.href = '/?screen=connect'; }}>AI 연결로 계속하기</button>
+                <button className="btn" onClick={() => moveToJourneyStep('connect')}>AI 연결로 계속하기</button>
                 <button className="btn quiet" onClick={reset}>다른 상황 연습하기</button>
               </div>
             </>
