@@ -530,9 +530,10 @@ function restoreProgress(){
 }
 
 function clearProgress(screen='intro'){
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(REHEARSAL_SUMMARY_KEY);
-  localStorage.removeItem(REHEARSAL_PROGRESS_KEY);
+  // NudgeOn이 이 기기에 저장한 정보만 모두 삭제하고 다른 사이트 데이터는 건드리지 않는다.
+  Object.keys(localStorage)
+    .filter(key=>key.startsWith('nudgeon.'))
+    .forEach(key=>localStorage.removeItem(key));
   resetState(screen);
   render();
 }
