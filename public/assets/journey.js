@@ -619,22 +619,17 @@ function renderInner(){
   bind();
   if(state.screen==='connect'){
     const needsByVision={work:['career'],study:['education'],social:['community'],unsure:[]};
-    const answeredLabel=pattern=>{
-      const question=QUESTIONS.find(item=>pattern.test(String(item.q||'')) && state.answers[item.key] && state.answers[item.key]!=='(답하지 않음)');
-      if(!question) return '';
-      const answer=state.answers[question.key];
-      return question.opts.find(option=>String(option[1])===String(answer))?.[0] || answer;
-    };
-    const ageAnswer=String(answeredLabel(/나이|연령|출생/));
-    const ageMatch=ageAnswer.match(/\d{1,3}/);
-    const regionAnswer=String(answeredLabel(/거주.*지역|사는.*곳|지역/));
-    const regionNames=['서울','경기','인천','부산','대구','광주','대전','울산','세종','강원','충북','충남','전북','전남','경북','경남','제주'];
+    const ageBands={u19:[0,19],a20:[20,24],a25:[25,29],a30:[30,34],o35:[35,99]};
+    const regionValues={seoul:'서울',gyeonggi:'경기'};
+    const ageBand=ageBands[state.answers.s1_age]||null;
+    const regionValue=state.answers.h_demo||state.answers.i_demo||state.answers.p_demo||'';
     window.NudgeonJourneyProfile={
       needs:needsByVision[state.profile?.vision]||[],
       journeyLevel:state.profile?.level||null,
       journeyBarrier:state.profile?.barrier||null,
-      age:ageMatch ? Number(ageMatch[0]) : null,
-      region:regionNames.find(name=>regionAnswer.includes(name))||''
+      ageMin:ageBand?.[0]??null,
+      ageMax:ageBand?.[1]??null,
+      region:regionValues[regionValue]||''
     };
     window.NudgeonConnect?.mount();
   }
