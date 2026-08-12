@@ -617,7 +617,15 @@ function renderInner(){
               rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
   stage.innerHTML = `${backButton()}${fn()}`;
   bind();
-  if(state.screen==='connect') window.NudgeonConnect?.mount();
+  if(state.screen==='connect'){
+    const needsByVision={work:['career'],study:['education'],social:['community'],unsure:[]};
+    window.NudgeonJourneyProfile={
+      needs:needsByVision[state.profile?.vision]||[],
+      journeyLevel:state.profile?.level||null,
+      journeyBarrier:state.profile?.barrier||null
+    };
+    window.NudgeonConnect?.mount();
+  }
   persistProgress();
   stage.querySelector('h1,h2')?.focus?.();
 }
@@ -907,49 +915,37 @@ async function loadPolicies(){
 }
 
 /* ── 05 기록 ── */
+const RECORD_NOTES_KEY='nudgeon.record-notes.v1';
+let recordDate=new Date().toISOString().slice(0,10);
+function recordRead(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
+function monthCalendar(selected){
+  const date=new Date(`${selected}T12:00:00`),year=date.getFullYear(),month=date.getMonth();
+  const first=new Date(year,month,1),last=new Date(year,month+1,0),today=new Date().toISOString().slice(0,10);
+  const cells=Array(first.getDay()).fill('<span></span>');
+  for(let day=1;day<=last.getDate();day++){
+    const key=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today':''}">${day}</button>`);
+  }
+  return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div>`;
+}
+
 function vRecord(){
   const done = state.micro.filter(s=>s.done).length;
-  const lowered = state.micro.reduce((sum,s)=>sum+(s.adjustedDown||0),0);
-  const raised = state.micro.reduce((sum,s)=>sum+(s.adjustedUp||0),0);
   const rehearsal = getRehearsalSummary();
   const turns = rehearsal?.completedTurns || 0;
-  const profile = state.profile;
-  const completed = [Boolean(profile), done>0, turns>0, Boolean(state.draft)].filter(Boolean).length;
-  const progress = Math.max(10, Math.round((completed/4)*100));
-  const nextActions = profile?.barrier==='going'
-    ? ['내일 현관 앞에 30초 서기','조용한 산책 코스만 다시 보기','오늘은 기록만 남기기']
-    : profile?.barrier==='contact' || profile?.barrier==='judged'
-      ? ['연습한 문장 한 번 읽기','문의할 기관 연락처만 저장하기','AI 리허설 한 턴 더 해보기']
-      : ['추천 정책 한 곳만 다시 열기','신청 조건 한 줄만 확인하기','오늘은 기록만 남기기'];
+  const saved=Object.values(recordRead('nudgeon.saved-resources.v1',{}));
+  const notes=recordRead(RECORD_NOTES_KEY,{});
+  const selectedIsToday=recordDate===new Date().toISOString().slice(0,10);
+  const stages=[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']];
+  const activities=[];
+  if(selectedIsToday && done) activities.push(`마이크로스텝 ${done}개 완료`);
+  if(selectedIsToday && turns) activities.push(`사회적 리허설 ${turns}턴 진행`);
+  saved.filter(item=>(item.savedAt||'').slice(0,10)===recordDate).forEach(item=>activities.push(`${item.resource?.title||'지원'} 저장`));
   return `
   <div class="eyebrow">05 — Record</div>
-  <h2 class="mid" tabindex="-1">오늘의 작은 움직임을 남겨요</h2>
-  <p class="lede">결과를 평가하는 기록이 아니라, 다음에 어디서 다시 시작할지 기억하는 기록이에요.</p>
-  <div class="record-progress card">
-    <div class="record-progress-head"><b>오늘의 연결 여정</b><span>${completed}/4 활동</span></div>
-    <div class="record-track" aria-label="오늘 활동 진행률 ${progress}%"><i style="width:${progress}%"></i></div>
-    <p>완료하지 않은 단계가 있어도 괜찮아요. 이동하거나 난도를 낮춘 것도 실행의 일부로 기록돼요.</p>
-  </div>
-  <div class="record-grid">
-    <div class="record-stat"><span>출발점</span><b>${profile ? `Lv.${profile.level} ${escapeHtml(profile.levelName)}` : '아직 확인 전'}</b></div>
-    <div class="record-stat"><span>작은 행동</span><b>${done}개 완료</b><small>더 작게 ${lowered} · 높이기 ${raised}</small></div>
-    <div class="record-stat"><span>말해본 횟수</span><b>${turns}턴</b></div>
-    <div class="record-stat"><span>실제 연결 준비</span><b>${state.draft ? '문의 문장 작성' : '정책 확인 중'}</b></div>
-  </div>
-  <div class="card next-action-card">
-    <b>다음에 이어갈 행동 하나</b>
-    <p>가장 부담이 적은 것 하나만 골라두면, 다음 방문에서 여기부터 이어갈 수 있어요.</p>
-    <div class="next-action-list">${nextActions.map(action=>`
-      <button class="next-action" data-next-action="${escapeHtml(action)}" aria-pressed="${state.nextAction===action}">
-        <span>${escapeHtml(action)}</span>${state.nextAction===action?'<b>✓</b>':''}
-      </button>`).join('')}</div>
-  </div>
-  ${state.nextAction ? `<div class="saved-next">다음 시작점이 저장됐어요 · <b>${escapeHtml(state.nextAction)}</b></div>` : ''}
-  <p class="note">이 데모의 진행 기록은 이 기기의 브라우저에만 저장돼요. 넛지온의 목표는 서비스에 오래 머무르게 하는 것이 아니라, 실제 사람과 자원으로 연결된 뒤 필요 없어지는 것입니다.</p>
-  <div class="row">
-    <button class="btn" data-go="check">다음 진단 시작하기</button>
-    <button class="btn quiet" data-clear-progress="1">이 기기의 기록 삭제</button>
-  </div>`;
+  <h2 class="mid" tabindex="-1">기록·성장</h2>
+  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>기록 저장</button></section></div>
+  <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>(item.stage||'preparing')===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -972,6 +968,13 @@ function bind(){
   stage.querySelectorAll('[data-next-action]').forEach(button=>button.onclick=()=>{
     state.nextAction=button.dataset.nextAction;
     render();
+  });
+  stage.querySelectorAll('[data-record-date]').forEach(button=>button.onclick=()=>{recordDate=button.dataset.recordDate;render()});
+  stage.querySelectorAll('[data-record-month]').forEach(button=>button.onclick=()=>{
+    const date=new Date(`${recordDate}T12:00:00`);date.setMonth(date.getMonth()+Number(button.dataset.recordMonth));date.setDate(1);recordDate=date.toISOString().slice(0,10);render();
+  });
+  stage.querySelector('[data-save-note]')?.addEventListener('click',()=>{
+    const notes=recordRead(RECORD_NOTES_KEY,{});notes[recordDate]=document.getElementById('recordNote')?.value||'';localStorage.setItem(RECORD_NOTES_KEY,JSON.stringify(notes));render();
   });
   stage.querySelectorAll('[data-prev-step]').forEach(b=>b.onclick=navigateBack);
   stage.querySelectorAll('[data-resume-saved]').forEach(b=>b.onclick=()=>{
