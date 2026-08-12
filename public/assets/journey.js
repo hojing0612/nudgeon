@@ -668,11 +668,16 @@ function vResume(){
   const label={check:'자가진단',bridge:'자가진단',report:'자가진단 결과',micro:'마이크로스텝',
     rehearsal:'사회적 리허설',connect:'AI 연결',record:'기록·성장'}[state.resumeScreen]||'이전 활동';
   return `
-  <div class="eyebrow">기기 저장</div>
-  <h1 class="big" tabindex="-1">이 기기에<br>하던 내용이 남아 있어요.</h1>
-  <p class="lede">자가진단 답변과 행동 기록만 이 브라우저에 저장돼요. 사회적 리허설의 대화 원문은 자동 저장하지 않아요.</p>
-  <div class="card"><b>${label}부터 이어갈까요?</b><p style="margin:8px 0 0;color:var(--ink-soft)">같은 브라우저에서만 이어지며 다른 기기나 계정과 자동 동기화되지는 않아요.</p></div>
-  <div class="row"><button class="btn" data-resume-saved="1">이어서 하기</button><button class="btn quiet" data-start-fresh="1">처음부터 시작</button></div>`;
+  <section class="resume-panel">
+    <div class="eyebrow">기기 저장</div>
+    <h1 class="big" tabindex="-1">하던 내용이 이 기기에 남아 있어요.</h1>
+    <p class="lede">자가진단 답변과 행동 기록만 이 브라우저에 저장돼요. 사회적 리허설의 대화 원문은 자동 저장하지 않아요.</p>
+    <div class="resume-card">
+      <span class="resume-mark" aria-hidden="true">↗</span>
+      <div><b>${label}부터 이어갈까요?</b><p>같은 브라우저에서만 이어지며 다른 기기나 계정과 자동 동기화되지는 않아요.</p></div>
+    </div>
+    <div class="row"><button class="btn" data-resume-saved="1">이어서 하기</button><button class="btn quiet" data-start-fresh="1">처음부터 시작</button></div>
+  </section>`;
 }
 
 /* ── 01 자가진단 ── */
