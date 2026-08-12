@@ -7,6 +7,7 @@
 - `/` — 전체 5단계 여정 (`public/home.html`)
 - `/rehearsal` — React 기반 사회적 리허설 (`src/`)
 - `/api/chat` — AI 대화 API (`api/chat.js`)
+- `/api/policies` — 온통청년 정책 조회 API (`api/policies.js`)
 
 Vercel의 경로 연결은 `vercel.json`에서 관리합니다. 기존처럼 React 안에 홈을 iframe으로 넣지 않습니다.
 
@@ -44,6 +45,13 @@ vercel.json                  배포 경로 규칙
 ```bash
 npm install
 npm run dev
+```
+
+Vercel 또는 로컬 서버 환경에 다음 비밀키를 등록합니다. 실제 값은 Git에 커밋하지 않습니다.
+
+```env
+YOUTH_POLICY_API_KEY=온통청년에서_발급받은_키
+ANTHROPIC_API_KEY=AI_API_키
 ```
 
 - 전체 여정: `http://localhost:5173/home.html`
