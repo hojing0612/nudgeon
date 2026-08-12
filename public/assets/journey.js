@@ -636,10 +636,16 @@ function renderRail(){
   const windowScreen = state.screen === 'resume' ? state.resumeScreen : cur;
   const windowIndex = SCREENS.indexOf(windowScreen);
   const p = windowIndex >= 0 ? (windowIndex + 1) / SCREENS.length : 0;
+  document.getElementById('appShell')?.setAttribute('data-window-screen', windowScreen || 'intro');
   document.documentElement.style.setProperty('--open', p.toFixed(2));
-  const notes = ['커튼은 아직 닫혀 있어요','조금 열렸어요','빛이 들어오고 있어요',
-                 '창밖이 보여요','거의 다 열렸어요','창문이 열렸어요'];
-  document.getElementById('windowNote').textContent = notes[Math.round(p*5)];
+  const screenNotes = {
+    check:'조금 열렸어요',
+    micro:'빛이 들어오고 있어요',
+    rehearsal:'저 멀리 작은 다리가 보입니다',
+    connect:'다리 너머 따뜻한 불빛이 켜져 있습니다',
+    record:'길과 다리가 이어진 밝은 풍경이 펼쳐집니다'
+  };
+  document.getElementById('windowNote').textContent = screenNotes[windowScreen] || '커튼은 아직 닫혀 있어요';
 }
 
 /* ── 00 시작 ── */
