@@ -52,6 +52,10 @@ Vercel 또는 로컬 서버 환경에 다음 비밀키를 등록합니다. 실�
 ```env
 YOUTH_POLICY_API_KEY=온통청년에서_발급받은_키
 ANTHROPIC_API_KEY=AI_API_키
+WORK24_JOBS_API_KEY=고용24_채용정보_인증키
+DATA_GO_KR_FINANCE_CENTER_API_KEY=서민금융통합지원센터_인증키
+DATA_GO_KR_LH_NOTICE_API_KEY=LH_분양임대공고_인증키
+DATA_GO_KR_WELFARE_SERVICE_API_KEY=중앙부처_복지서비스_인증키
 ```
 
 - 전체 여정: `http://localhost:5173/home.html`
@@ -71,6 +75,6 @@ npm run build
 
 브라우저는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만 사용합니다. 정책 수집 서버에서 사용하는 `SUPABASE_SERVICE_ROLE_KEY`는 Vercel의 서버 환경변수로만 보관하고 코드나 `VITE_` 변수에 넣지 않습니다.
 
-온통청년 정책은 Vercel Cron이 매일 `/api/sync-policies`를 호출해 `resources`에 갱신합니다. Claude는 15분마다 `/api/analyze-policies`에서 새 정책의 실질 혜택·대상 지역·연령·모집 상태를 구조화합니다. 4단계에서는 필수 자격을 코드로 먼저 거른 뒤 Claude가 사용자의 필요와 관심 직종에 맞춰 순서를 정합니다.
+Vercel Cron은 매일 `/api/sync-policies`를 호출해 온통청년, 고용24 채용정보, 중앙부처 복지서비스, LH 분양·임대 공고, 서민금융통합지원센터 데이터를 `resources`에 중복 없이 갱신합니다. 한 외부 API가 실패해도 나머지 수집은 계속됩니다. 현재 고용24는 공식 요청 문서가 확인된 채용정보부터 연결되어 있고, 다른 고용24 서비스는 각 요청 URL과 응답 명세를 확인한 뒤 같은 수집 구조에 추가합니다. Claude는 15분마다 `/api/analyze-policies`에서 새 정책의 실질 혜택·대상 지역·연령·모집 상태를 구조화합니다. 4단계에서는 필수 자격을 코드로 먼저 거른 뒤 Claude가 사용자의 필요와 관심 직종에 맞춰 순서를 정합니다.
 
 AI 추천을 사용하려면 `20260812113000_add_ai_policy_analysis.sql`까지 적용하고 Vercel Production 환경에 `ANTHROPIC_API_KEY`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`를 등록해야 합니다. `CRON_SECRET`에는 충분히 긴 임의 문자열을 사용하며, Vercel은 Cron 요청의 `Authorization` 헤더에 이 값을 자동으로 넣습니다.
