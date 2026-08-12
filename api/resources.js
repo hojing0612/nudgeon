@@ -29,6 +29,14 @@ function categoryOf(resource) {
   return resource.raw_data?.category || 'welfare';
 }
 
+function supabaseHeaders(key) {
+  const headers = { apikey: key };
+  // Legacy anon keys are JWTs and can also be used as a Bearer token.
+  // New sb_publishable_* keys authenticate through the apikey header only.
+  if (!key.startsWith('sb_')) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET 요청만 받아요' });
   const url = process.env.VITE_SUPABASE_URL;
@@ -39,8 +47,11 @@ export default async function handler(req, res) {
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
   const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
   if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
-  const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
-  if (!response.ok) return res.status(502).json({ error: '정책 DB 조회에 실패했어요' });
+  const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
+  if (!response.ok) {
+    console.error('정책 DB 조회 실패:', response.status, (await response.text()).slice(0, 500));
+    return res.status(502).json({ error: '정책 DB 조회에 실패했어요' });
+  }
   const rows = await response.json();
   const profile = { age: req.query.age, region: req.query.region };
   const items = rows
