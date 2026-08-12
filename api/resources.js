@@ -20,11 +20,14 @@ function eligibility(resource, profile) {
   const missing = [];
   const raw = resource.raw_data || {};
   const age = numberOrNull(profile.age);
+  const userMin = numberOrNull(profile.ageMin);
+  const userMax = numberOrNull(profile.ageMax);
   const min = numberOrNull(raw.minAge);
   const max = numberOrNull(raw.maxAge);
   if (min || max) {
-    if (!age) missing.push('나이');
-    else if ((min && age < min) || (max && age > max)) reasons.push(`연령 조건 ${min || ''}~${max || ''}세`);
+    if (!age && !userMin && !userMax) missing.push('나이');
+    else if (!age && ((max && userMin && userMin > max) || (min && userMax && userMax < min))) reasons.push(`연령 조건 ${min || ''}~${max || ''}세`);
+    else if (age && ((min && age < min) || (max && age > max))) reasons.push(`연령 조건 ${min || ''}~${max || ''}세`);
   }
   const userRegion = String(profile.region || '');
   const regionPrefix = REGION_PREFIX[userRegion] || (/^\d{2,5}$/.test(userRegion) ? userRegion.slice(0, 2) : '');
@@ -77,7 +80,7 @@ export default async function handler(req, res) {
   }
   const rows = await response.json();
   const profile = {
-    age: req.query.age, region: req.query.region,
+    age: req.query.age, ageMin: req.query.ageMin, ageMax: req.query.ageMax, region: req.query.region,
     education: req.query.education, employment: req.query.employment
   };
   const items = rows
