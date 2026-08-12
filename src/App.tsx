@@ -31,6 +31,54 @@ type Phase = 'idle' | 'prep' | 'speaking' | 'user-turn' | 'post-burden' | 'finis
 type Readiness = 'hard' | 'small' | 'now' | null;
 const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
+const REHEARSAL_HISTORY_KEY = 'nudgeon.rehearsal-history.v1';
+const RESOURCE_CONTEXT_KEY = 'nudgeon.rehearsal-context.v1';
+const CONNECT_FOCUS_KEY = 'nudgeon.connect-focus-resource.v1';
+
+type ResourceRehearsalContext = {
+  resourceId: string;
+  resourceTitle: string;
+  organization: string;
+  applicationUrl: string;
+  returnTo: string;
+  scenario: Scenario;
+};
+
+function createLocalId(): string {
+  return crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadResourceRehearsalContext(): ResourceRehearsalContext | null {
+  try {
+    const resourceId = new URLSearchParams(window.location.search).get('resource');
+    const saved = JSON.parse(localStorage.getItem(RESOURCE_CONTEXT_KEY) || 'null');
+    if (!resourceId || !saved || saved.resourceId !== resourceId || !saved.resource?.title) return null;
+    const resourceTitle = String(saved.resource.title);
+    const organization = String(saved.resource.organization || '운영기관');
+    return {
+      resourceId,
+      resourceTitle,
+      organization,
+      applicationUrl: String(saved.resource.applicationUrl || ''),
+      returnTo: '/home.html?screen=connect',
+      scenario: {
+        id: `resource:${resourceId}`,
+        title: `${resourceTitle} 문의 연습`,
+        who: `${organization}의 ${resourceTitle} 담당자`,
+        open: `안녕하세요, ${organization} ${resourceTitle} 담당자입니다. 어떤 점이 궁금하신가요?`,
+        portrait: SCENARIOS.find((item) => item.id === 'apply')?.portrait || '',
+        opponentName: '지원 담당자',
+        opponentRole: organization,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function fallbackExamplesFor(scenarioId: string) {
+  return FALLBACK_EXAMPLES[scenarioId] || (scenarioId.startsWith('resource:') ? FALLBACK_EXAMPLES.apply : FALLBACK_EXAMPLES.center);
+}
 
 type RehearsalProgress = {
   scenarioId: string | null;
@@ -171,7 +219,7 @@ async function askAIForExamples(scenario: Scenario, messages: ChatMessage[]): Pr
     }
   } catch { /* fall through */ }
 
-  return FALLBACK_EXAMPLES[scenario.id] || FALLBACK_EXAMPLES.center;
+  return fallbackExamplesFor(scenario.id);
 }
 
 async function askAIForRewrite(scenario: Scenario, userText: string): Promise<string> {
@@ -210,26 +258,32 @@ JSON 형식으로 출력: {"rewritten": "다듬어진 문장"}`,
 function App() {
   const restoredProgressRef = useRef<RehearsalProgress | null>(loadRehearsalProgress());
   const restoredProgress = restoredProgressRef.current;
+  const resourceContextRef = useRef<ResourceRehearsalContext | null>(loadResourceRehearsalContext());
+  const resourceContext = resourceContextRef.current;
+  const applicableProgress = resourceContext && restoredProgress?.scenarioId !== resourceContext.scenario.id
+    ? null
+    : restoredProgress;
+  const rehearsalIdRef = useRef(createLocalId());
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(() =>
-    SCENARIOS.find((item) => item.id === restoredProgress?.scenarioId) || null);
-  const [phase, setPhase] = useState<Phase>(restoredProgress?.phase || 'idle');
+    resourceContext?.scenario || SCENARIOS.find((item) => item.id === applicableProgress?.scenarioId) || null);
+  const [phase, setPhase] = useState<Phase>(resourceContext && !applicableProgress ? 'prep' : applicableProgress?.phase || 'idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [currentLine, setCurrentLine] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
-  const [elapsed, setElapsed] = useState(restoredProgress?.elapsed || 0);
+  const [elapsed, setElapsed] = useState(applicableProgress?.elapsed || 0);
   const [inputText, setInputText] = useState('');
 
-  const [burdenBefore, setBurdenBefore] = useState<number | null>(restoredProgress?.burdenBefore ?? null);
-  const [burdenAfter, setBurdenAfter] = useState<number | null>(restoredProgress?.burdenAfter ?? null);
-  const [readiness, setReadiness] = useState<Readiness>(restoredProgress?.readiness ?? null);
-  const [selectedNextStep, setSelectedNextStep] = useState<string | null>(restoredProgress?.selectedNextStep ?? null);
+  const [burdenBefore, setBurdenBefore] = useState<number | null>(applicableProgress?.burdenBefore ?? null);
+  const [burdenAfter, setBurdenAfter] = useState<number | null>(applicableProgress?.burdenAfter ?? null);
+  const [readiness, setReadiness] = useState<Readiness>(applicableProgress?.readiness ?? null);
+  const [selectedNextStep, setSelectedNextStep] = useState<string | null>(applicableProgress?.selectedNextStep ?? null);
 
-  const [promptHelpCount, setPromptHelpCount] = useState(restoredProgress?.promptHelpCount || 0);
-  const [rewriteCount, setRewriteCount] = useState(restoredProgress?.rewriteCount || 0);
+  const [promptHelpCount, setPromptHelpCount] = useState(applicableProgress?.promptHelpCount || 0);
+  const [rewriteCount, setRewriteCount] = useState(applicableProgress?.rewriteCount || 0);
   const responseLatenciesRef = useRef<number[]>([]);
   const opponentFinishTimeRef = useRef<number>(0);
   const userStartedRef = useRef(false);
@@ -353,6 +407,7 @@ function App() {
     : 0;
 
   const selectScenario = useCallback((sc: Scenario) => {
+    rehearsalIdRef.current = createLocalId();
     setScenario(sc);
     setPhase('prep');
     setBurdenBefore(null);
@@ -472,17 +527,25 @@ function App() {
   const completePostBurden = useCallback(() => {
     if (scenario) {
       try {
-        localStorage.setItem(REHEARSAL_SUMMARY_KEY, JSON.stringify({
+        const matchesResource = scenario.id === resourceContext?.scenario.id;
+        const summary = {
+          id: rehearsalIdRef.current,
           savedAt: new Date().toISOString(),
           scenarioId: scenario.id,
           scenarioTitle: scenario.title,
+          resourceId: matchesResource ? resourceContext?.resourceId || null : null,
+          resourceTitle: matchesResource ? resourceContext?.resourceTitle || null : null,
           burdenBefore,
           burdenAfter,
           readiness,
           completedTurns: messages.filter((message) => message.role === 'me').length,
           promptHelpCount,
           rewriteCount,
-        }));
+        };
+        localStorage.setItem(REHEARSAL_SUMMARY_KEY, JSON.stringify(summary));
+        const history = JSON.parse(localStorage.getItem(REHEARSAL_HISTORY_KEY) || '[]');
+        const previous = Array.isArray(history) ? history.filter((item) => item?.id !== summary.id) : [];
+        localStorage.setItem(REHEARSAL_HISTORY_KEY, JSON.stringify([...previous, summary].slice(-200)));
       } catch {
         // Private browsing or device policy may disable local storage.
       }
@@ -491,9 +554,10 @@ function App() {
     setSavedId(null);
     setSaveError(null);
     setConsentTranscript(false);
-  }, [scenario, burdenBefore, burdenAfter, readiness, messages, promptHelpCount, rewriteCount]);
+  }, [scenario, resourceContext, burdenBefore, burdenAfter, readiness, messages, promptHelpCount, rewriteCount]);
 
   const reset = useCallback(() => {
+    rehearsalIdRef.current = createLocalId();
     localStorage.removeItem(REHEARSAL_PROGRESS_KEY);
     setScenario(null);
     setMessages([]);
@@ -529,12 +593,27 @@ function App() {
     window.location.href = `/home.html?screen=${screen}`;
   }, [stopTTS, stopSpeech]);
 
+  const returnToResource = useCallback(() => {
+    if (!resourceContext) return;
+    stopTTS();
+    stopSpeech();
+    localStorage.removeItem(REHEARSAL_PROGRESS_KEY);
+    localStorage.setItem(CONNECT_FOCUS_KEY, JSON.stringify(resourceContext.resourceId));
+    window.location.href = resourceContext.returnTo;
+  }, [resourceContext, stopTTS, stopSpeech]);
+
+  const isResourceScenario = Boolean(resourceContext && scenario?.id === resourceContext.scenario.id);
+
   const goToPreviousStep = useCallback(() => {
     if (!scenario || phase === 'idle') {
       window.location.href = '/home.html?screen=micro';
       return;
     }
     if (phase === 'prep') {
+      if (isResourceScenario) {
+        returnToResource();
+        return;
+      }
       reset();
       return;
     }
@@ -550,7 +629,7 @@ function App() {
     if (phase === 'finished') {
       setPhase('post-burden');
     }
-  }, [scenario, phase, reset]);
+  }, [scenario, phase, reset, isResourceScenario, returnToResource]);
 
   const handleGetExamples = useCallback(async () => {
     if (!scenario) return;
@@ -561,7 +640,7 @@ function App() {
       const result = await askAIForExamples(scenario, messages);
       setExamples(result);
     } catch {
-      setExamples(FALLBACK_EXAMPLES[scenario.id] || FALLBACK_EXAMPLES.center);
+      setExamples(fallbackExamplesFor(scenario.id));
     } finally {
       setExamplesLoading(false);
     }
@@ -646,7 +725,7 @@ function App() {
   const isFinished = phase === 'finished';
   const showResults = isFinished;
   const burdenLabels = ['전혀 부담되지 않아요', '조금 부담돼요', '보통이에요', '많이 부담돼요', '매우 부담돼요'];
-  const nextSteps = scenario ? NEXT_STEPS[scenario.id] || [] : [];
+  const nextSteps = scenario ? NEXT_STEPS[scenario.id] || (scenario.id.startsWith('resource:') ? NEXT_STEPS.apply : []) : [];
 
   return (
     <div className="app">
@@ -719,6 +798,14 @@ function App() {
             <>
               <div className="eyebrow">03 — {scenario.title}</div>
               <h2 className="mid" tabIndex={-1}>{scenario.title}</h2>
+
+              {isResourceScenario && resourceContext && (
+                <div className="card" style={{ borderColor: 'var(--sage)', background: 'var(--mist)' }}>
+                  <p style={{ margin: '0 0 4px', fontSize: '12px', color: 'var(--ink-soft)' }}>정책 상세에서 이어온 맞춤 연습</p>
+                  <p style={{ margin: '0', fontSize: '15px', fontWeight: 600 }}>{resourceContext.resourceTitle}</p>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--ink-soft)' }}>{resourceContext.organization} 담당자에게 신청 자격과 절차를 문의하는 상황이에요.</p>
+                </div>
+              )}
 
               <div className="card">
                 <p style={{ margin: '0 0 6px', fontSize: '15px', fontWeight: 600 }}>
@@ -951,7 +1038,7 @@ function App() {
                 <p style={{ margin: '0 0 14px', fontSize: '13px', color: 'var(--ink-soft)' }}>하나만 선택해도 충분해요. 실제 전화나 외부 연락을 자동으로 하지는 않아요.</p>
                 <div className="next-step-list">
                   {nextSteps.map((step) => (
-                    <button key={step.id} className={`next-step-btn ${selectedNextStep === step.id ? 'selected' : ''}`} onClick={() => { setSelectedNextStep(step.id); if (step.id.startsWith('copy-')) { const userMessages = messages.filter((m) => m.role === 'me').map((m) => m.text).join(' '); copyToClipboard(userMessages || '연습한 문장이 여기에 들어가요.'); } }} aria-pressed={selectedNextStep === step.id}>
+                    <button key={step.id} className={`next-step-btn ${selectedNextStep === step.id ? 'selected' : ''}`} onClick={() => { setSelectedNextStep(step.id); if (step.id.startsWith('copy-')) { const userMessages = messages.filter((m) => m.role === 'me').map((m) => m.text).join(' '); copyToClipboard(userMessages || '연습한 문장이 여기에 들어가요.'); } if (step.id === 'view-program' && isResourceScenario) returnToResource(); }} aria-pressed={selectedNextStep === step.id}>
                       <span className="ns-label">{step.label}</span>
                       <span className="ns-desc">{step.description}</span>
                       {selectedNextStep === step.id && <Check size={16} className="ns-check" />}
@@ -983,7 +1070,11 @@ function App() {
               </div>
 
               <div className="row">
-                <button className="btn" onClick={() => moveToJourneyStep('connect')}>AI 연결로 계속하기</button>
+                {isResourceScenario ? (
+                  <button className="btn" onClick={returnToResource}>정책 상세로 돌아가기</button>
+                ) : (
+                  <button className="btn" onClick={() => moveToJourneyStep('connect')}>AI 연결로 계속하기</button>
+                )}
                 <button className="btn quiet" onClick={reset}>다른 상황 연습하기</button>
               </div>
             </>
