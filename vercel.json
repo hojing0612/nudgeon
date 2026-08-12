@@ -1,6 +1,7 @@
 {
   "crons": [
-    { "path": "/api/sync-policies", "schedule": "0 18 * * *" }
+    { "path": "/api/sync-policies", "schedule": "0 18 * * *" },
+    { "path": "/api/analyze-policies", "schedule": "*/15 * * * *" }
   ],
   "rewrites": [
     { "source": "/", "destination": "/home.html" },
