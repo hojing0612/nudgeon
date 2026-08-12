@@ -1,3 +1,5 @@
+import { callClaudeTool } from './_anthropic.js';
+
 function numberOrNull(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -52,7 +54,54 @@ function eligibility(resource, profile) {
 }
 
 function categoryOf(resource) {
-  return resource.raw_data?.category || 'welfare';
+  return resource.ai_analysis?.category || resource.raw_data?.category || 'welfare';
+}
+
+function analyzedEligibility(resource, profile) {
+  const ai = resource.ai_analysis;
+  if (!ai || ai.confidence < .55 || !ai.recommended || ai.practical_value < 4) return false;
+  if (!['open', 'always'].includes(ai.application_status)) return false;
+  const region = String(profile.region || '');
+  if (!ai.nationwide && region && (!ai.target_regions?.length || !ai.target_regions.some(value => String(value).includes(region) || region.includes(String(value))))) return false;
+  const userMin = numberOrNull(profile.ageMin) || numberOrNull(profile.age);
+  const userMax = numberOrNull(profile.ageMax) || numberOrNull(profile.age);
+  if (ai.age_max && userMin && userMin > ai.age_max) return false;
+  if (ai.age_min && userMax && userMax < ai.age_min) return false;
+  if (profile.education && ai.education_statuses?.length && !ai.education_statuses.includes(profile.education)) return false;
+  if (profile.employment && ai.employment_statuses?.length && !ai.employment_statuses.includes(profile.employment)) return false;
+  return true;
+}
+
+const rankingSchema = {
+  type: 'object', additionalProperties: false, required: ['recommended_ids'],
+  properties: { recommended_ids: { type: 'array', items: { type: 'string' } } }
+};
+
+async function personalizedOrder(candidates, profile) {
+  const fallback = [...candidates].sort((a, b) => (b.ai_analysis?.practical_value || 0) - (a.ai_analysis?.practical_value || 0));
+  if (!candidates.length || !process.env.ANTHROPIC_API_KEY) return fallback;
+  try {
+    const result = await callClaudeTool({
+      name: 'rank_recommendations',
+      description: '이미 필수 자격 조건을 통과한 정책만 사용자의 필요와 희망 직무에 맞춰 유용한 순서로 정렬한다. 모든 후보 ID를 중복 없이 반환한다.',
+      schema: rankingSchema,
+      input: {
+        profile,
+        candidates: candidates.map(resource => ({
+          id: resource.id, title: resource.title, summary: resource.summary,
+          organization: resource.organization_name, analysis: resource.ai_analysis
+        }))
+      },
+      maxTokens: 1800
+    });
+    const byId = new Map(candidates.map(item => [item.id, item]));
+    const ordered = result.recommended_ids.map(id => byId.get(id)).filter(Boolean);
+    const seen = new Set(ordered.map(item => item.id));
+    return [...ordered, ...fallback.filter(item => !seen.has(item.id))];
+  } catch (error) {
+    console.error('맞춤 추천 정렬 실패:', error);
+    return fallback;
+  }
 }
 
 function supabaseHeaders(key) {
@@ -71,7 +120,7 @@ export default async function handler(req, res) {
   const category = String(req.query.category || 'all');
   const query = String(req.query.q || '').trim().slice(0, 80);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
-  const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
+  const params = new URLSearchParams({ select: '*', status: 'eq.published', ai_analyzed_at: 'not.is.null', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
   if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
   const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
   if (!response.ok) {
@@ -81,15 +130,21 @@ export default async function handler(req, res) {
   const rows = await response.json();
   const profile = {
     age: req.query.age, ageMin: req.query.ageMin, ageMax: req.query.ageMax, region: req.query.region,
-    education: req.query.education, employment: req.query.employment
+    education: req.query.education, employment: req.query.employment, income: req.query.income,
+    needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
-  const items = rows
+  const candidates = rows
     .filter(resource => category === 'all' || categoryOf(resource) === category)
-    .map(resource => ({ resource, eligibility: eligibility(resource, profile) }))
-    .filter(({ resource, eligibility: result }) => result.result !== 'unlikely' && resource.application_status !== 'closed')
-    .map(({ resource, eligibility: result }) => ({
+    .filter(resource => eligibility(resource, profile).result !== 'unlikely')
+    .filter(resource => analyzedEligibility(resource, profile))
+    .slice(0, 30);
+  const ranked = await personalizedOrder(candidates, profile);
+  const items = ranked.map(resource => {
+    const result = eligibility(resource, profile);
+    return {
       id: resource.id, title: resource.title, summary: resource.summary,
-      support: resource.support_details, organization: resource.organization_name,
+      support: resource.support_details, benefitSummary: resource.ai_analysis?.benefit_summary,
+      organization: resource.organization_name,
       category: categoryOf(resource), applicationUrl: resource.application_url,
       referenceUrl: resource.reference_url, applicationMethod: resource.application_method,
       requiredDocuments: resource.required_documents, applicationStatus: resource.application_status,
@@ -97,6 +152,7 @@ export default async function handler(req, res) {
       periodText: resource.raw_data?.applicationPeriod || '',
       qualification: resource.details || '', eligibility: result,
       source: resource.source_key
-    }));
+    };
+  });
   return res.status(200).json({ total: items.length, resources: items });
 }
