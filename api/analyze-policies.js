@@ -10,14 +10,14 @@ const analysisSchema = {
     required: ['id','category','benefit_type','benefit_summary','practical_value','target_regions','nationwide','age_min','age_max','education_statuses','employment_statuses','job_fields','application_status','application_start','application_end','recommended','confidence','source_evidence'],
     properties: {
       id:{type:'string'}, category:{type:'string',enum:CATEGORIES}, benefit_type:{type:'string',enum:BENEFITS},
-      benefit_summary:{type:'string'}, practical_value:{type:'integer',minimum:0,maximum:10},
+      benefit_summary:{type:'string'}, practical_value:{type:'integer'},
       target_regions:{type:'array',items:{type:'string'}}, nationwide:{type:'boolean'},
       age_min:{type:['integer','null']}, age_max:{type:['integer','null']},
       education_statuses:{type:'array',items:{type:'string',enum:['student','leave','graduate','none']}},
       employment_statuses:{type:'array',items:{type:'string',enum:['unemployed','inactive','employed','parttime','student']}},
       job_fields:{type:'array',items:{type:'string'}}, application_status:{type:'string',enum:['open','upcoming','closed','always','unknown']},
       application_start:{type:['string','null']}, application_end:{type:['string','null']},
-      recommended:{type:'boolean'}, confidence:{type:'number',minimum:0,maximum:1}, source_evidence:{type:'array',items:{type:'string'}}
+      recommended:{type:'boolean'}, confidence:{type:'number'}, source_evidence:{type:'array',items:{type:'string'}}
     }
   }}}
 };
@@ -29,6 +29,14 @@ async function db(path, options = {}) {
   const text = await response.text();
   if (!response.ok) throw new Error(`Supabase ${response.status}: ${text.slice(0,800)}`);
   return text ? JSON.parse(text) : [];
+}
+
+function normalizeAnalysis(analysis) {
+  return {
+    ...analysis,
+    practical_value: Math.min(10, Math.max(0, Math.round(Number(analysis.practical_value) || 0))),
+    confidence: Math.min(1, Math.max(0, Number(analysis.confidence) || 0))
+  };
 }
 
 export default async function handler(req, res) {
@@ -46,8 +54,9 @@ export default async function handler(req, res) {
     });
     const byId = new Map(result.analyses.map(item => [item.id,item]));
     for (const row of rows) {
-      const analysis = byId.get(row.id);
-      if (!analysis) continue;
+      const rawAnalysis = byId.get(row.id);
+      if (!rawAnalysis) continue;
+      const analysis = normalizeAnalysis(rawAnalysis);
       await db(`resources?id=eq.${row.id}`, { method:'PATCH', body:JSON.stringify({ ai_analysis:analysis, ai_analyzed_at:new Date().toISOString(), status:analysis.confidence < .55 ? 'review' : 'published' }) });
     }
     return res.status(200).json({ success:true, analyzed:byId.size, remaining:true });
