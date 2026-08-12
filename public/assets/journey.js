@@ -468,7 +468,8 @@ const state = {
   qi:0, answers:{},
   profile:null, report:null, group:null,
   micro:[], scenario:null, messages:[], busy:false,
-  draft:null, resources:[], resourcesLoading:false, resourcesError:null, visited:new Set()
+  draft:null, resources:[], resourcesLoading:false, resourcesError:null,
+  nextAction:null, visited:new Set()
 };
 
 const stage = document.getElementById('stage');
@@ -476,11 +477,12 @@ const SCREENS = ['check','micro','rehearsal','connect','record'];
 const SCREEN_NAMES = ['자가진단','마이크로스텝','사회적 리허설','AI 연결','기록·성장'];
 const STORAGE_KEY = 'nudgeon.journey.v1';
 const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
+const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,group:null,
     micro:[],scenario:null,messages:[],busy:false,draft:null,
-    resources:[],resourcesLoading:false,resourcesError:null,visited:new Set()});
+    resources:[],resourcesLoading:false,resourcesError:null,nextAction:null,visited:new Set()});
   if(ALL_QUESTIONS.length){
     const base=questionsOf(STAGE1);
     QUESTIONS=base.length ? base : ALL_QUESTIONS;
@@ -494,7 +496,7 @@ function persistProgress(){
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       version:1,savedAt:new Date().toISOString(),screen,qi:state.qi,answers:state.answers,
       profile:state.profile,report:state.report,group:state.group,micro:state.micro,
-      draft:state.draft,visited:[...state.visited]
+      draft:state.draft,nextAction:state.nextAction,visited:[...state.visited]
     }));
   }catch(error){ console.warn('기기 저장에 실패했습니다.',error); }
 }
@@ -508,7 +510,8 @@ function restoreProgress(){
     Object.assign(state,{
       screen:saved.screen,qi:Number(saved.qi)||0,answers:saved.answers||{},profile:saved.profile||null,
       report:saved.report||null,group:saved.group||null,micro:Array.isArray(saved.micro)?saved.micro:[],
-      draft:saved.draft||null,visited:new Set(Array.isArray(saved.visited)?saved.visited:[])
+      draft:saved.draft||null,nextAction:saved.nextAction||null,
+      visited:new Set(Array.isArray(saved.visited)?saved.visited:[])
     });
     if(ALL_QUESTIONS.length){
       const base=questionsOf(STAGE1);
@@ -529,14 +532,17 @@ function restoreProgress(){
 function clearProgress(screen='intro'){
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(REHEARSAL_SUMMARY_KEY);
+  localStorage.removeItem(REHEARSAL_PROGRESS_KEY);
   resetState(screen);
   render();
 }
 
 function canOpenScreen(screen){
   if(screen==='intro' || screen==='check') return true;
+  /* AI 연결은 리허설 단독 화면에서 넘어온 경우에도 기본 추천으로 열 수 있다. */
+  if(screen==='connect' || screen==='record') return true;
   if(screen==='bridge') return Boolean(state.group);
-  if(screen==='report' || screen==='micro' || screen==='rehearsal' || screen==='connect' || screen==='record') return Boolean(state.profile);
+  if(screen==='report' || screen==='micro' || screen==='rehearsal') return Boolean(state.profile);
   return false;
 }
 
@@ -842,14 +848,18 @@ function vRehearsal(){
 
 /* ── 04 AI 연결 ── */
 function vConnect(){
-  const p = state.profile;
+  const p = state.profile || {
+    level:3, levelName:'제한적 외출', barrier:'overload', barrierLabel:'정보 과부하',
+    vision:'unsure', actionSize:'정보 한 곳만 확인하기'
+  };
   const fallback = RESOURCES.filter(r=>r.levels.includes(p.level)).slice(0,3);
   const list = state.resources.length ? state.resources : fallback;
   return `
   <div class="eyebrow">04 — Smart Matching</div>
   <h2 class="mid" tabindex="-1">지금 단계에서 문턱이 가장 낮은 곳 3곳</h2>
-  <p class="lede">전부 보여주면 오히려 못 고르게 돼요. Lv.${p.level} · ${p.barrierLabel} 기준으로
-  <b>지금 신청 가능한 것만</b> 남겼어요.</p>
+  <p class="lede">전부 보여주면 오히려 못 고르게 돼요. ${state.profile
+    ? `Lv.${p.level} · ${p.barrierLabel} 기준으로` : '자가진단 정보가 없어 우선 부담이 낮은 정책부터'}
+  <b>확인할 정책 3개만</b> 남겼어요.</p>
   ${state.resourcesLoading ? `<div class="card"><p style="margin:0">온통청년에서 지금 신청할 수 있는 정책을 찾고 있어요.</p></div>` : ''}
   ${list.map(r=>`
     <div class="res">
@@ -862,13 +872,16 @@ function vConnect(){
     <b style="font-size:15px">첫 문의 문장, 대신 써드릴게요</b>
     <p style="margin:7px 0 0; font-size:14px; color:var(--ink-soft)">
       보내지 않아도 돼요. 저장만 해두는 것도 한 걸음이에요.</p>
-    ${state.draft ? `<div class="draft" id="draftBox">${state.draft}</div>
+    ${state.draft ? `<div class="draft" id="draftBox">${escapeHtml(state.draft)}</div>
       <div class="row" style="margin-top:14px">
         <button class="btn quiet" data-copy="1">복사하기</button>
         <button class="btn quiet" data-draft="1">다시 써주세요</button></div>`
     : `<div class="row" style="margin-top:14px"><button class="btn" data-draft="1">문의 문장 만들기</button></div>`}
   </div>
-  <div class="row"><button class="btn" data-go="record">오늘 한 일 정리하기</button></div>
+  <div class="row">
+    ${state.resourcesError ? '<button class="btn quiet" data-retry-policies="1">정책 다시 불러오기</button>' : ''}
+    ${state.profile ? '<button class="btn" data-go="record">오늘 한 일 정리하기</button>' : '<button class="btn quiet" data-go="check">자가진단하고 더 정확히 찾기</button>'}
+  </div>
   <p class="note">${state.resourcesError
     ? '온통청년 연결이 원활하지 않아 현재는 대비 데이터를 보여드리고 있어요.'
     : '온통청년의 정책 정보를 바탕으로 보여드려요.'}
@@ -906,14 +919,17 @@ async function loadPolicies(){
   state.resourcesError=null;
   render();
   try{
-    const keyword=policyKeyword(state.profile);
+    const profile=state.profile || {
+      level:3, barrier:'overload', barrierLabel:'정보 과부하', vision:'unsure'
+    };
+    const keyword=policyKeyword(profile);
     const response=await fetch(`/api/policies?keyword=${encodeURIComponent(keyword)}&pageSize=20`);
     if(!response.ok) throw new Error('API '+response.status);
     const data=await response.json();
     state.resources=(data.policies||[]).slice(0,3).map(policy=>({
       name:policy.title,
       tag:[policy.category,policy.subcategory].filter(Boolean).join(' · ') || '온통청년',
-      why:policyReason(policy,state.profile),
+      why:policyReason(policy,profile),
       url:policy.applicationUrl || ''
     }));
     if(!state.resources.length) throw new Error('검색 결과 없음');
@@ -933,23 +949,41 @@ function vRecord(){
   const raised = state.micro.reduce((sum,s)=>sum+(s.adjustedUp||0),0);
   const rehearsal = getRehearsalSummary();
   const turns = rehearsal?.completedTurns || 0;
+  const profile = state.profile;
+  const completed = [Boolean(profile), done>0, turns>0, Boolean(state.draft)].filter(Boolean).length;
+  const progress = Math.max(10, Math.round((completed/4)*100));
+  const nextActions = profile?.barrier==='going'
+    ? ['내일 현관 앞에 30초 서기','조용한 산책 코스만 다시 보기','오늘은 기록만 남기기']
+    : profile?.barrier==='contact' || profile?.barrier==='judged'
+      ? ['연습한 문장 한 번 읽기','문의할 기관 연락처만 저장하기','AI 리허설 한 턴 더 해보기']
+      : ['추천 정책 한 곳만 다시 열기','신청 조건 한 줄만 확인하기','오늘은 기록만 남기기'];
   return `
   <div class="eyebrow">05 — Record</div>
-  <h2 class="mid" tabindex="-1">오늘, 이만큼 움직였어요</h2>
-  <div class="card">
-    <p style="margin:0 0 8px">· 자가진단 완료 — Lv.${state.profile.level} ${state.profile.levelName}</p>
-    <p style="margin:0 0 8px">· 마이크로스텝 ${done}개 완료</p>
-    <p style="margin:0 0 8px">· 난이도 조정 — 더 작게 ${lowered}번 · 높이기 ${raised}번</p>
-    <p style="margin:0 0 8px">· 사회적 리허설 ${turns}번 말해봄</p>
-    <p style="margin:0">· 문의 문장 ${state.draft?'작성 완료':'아직 안 씀'}</p>
+  <h2 class="mid" tabindex="-1">오늘의 작은 움직임을 남겨요</h2>
+  <p class="lede">결과를 평가하는 기록이 아니라, 다음에 어디서 다시 시작할지 기억하는 기록이에요.</p>
+  <div class="record-progress card">
+    <div class="record-progress-head"><b>오늘의 연결 여정</b><span>${completed}/4 활동</span></div>
+    <div class="record-track" aria-label="오늘 활동 진행률 ${progress}%"><i style="width:${progress}%"></i></div>
+    <p>완료하지 않은 단계가 있어도 괜찮아요. 이동하거나 난도를 낮춘 것도 실행의 일부로 기록돼요.</p>
   </div>
-  <div class="card">
-    <p style="margin:0; font-size:15px">이 기록은 다시 1단계 진단으로 돌아가요.
-    다음에 열었을 때는 오늘보다 조금 다른 크기의 행동을 제안할 거예요.
-    <b>넛지온의 목표는 오래 머무는 게 아니라, 필요 없어지는 것</b>이니까요.</p>
+  <div class="record-grid">
+    <div class="record-stat"><span>출발점</span><b>${profile ? `Lv.${profile.level} ${escapeHtml(profile.levelName)}` : '아직 확인 전'}</b></div>
+    <div class="record-stat"><span>작은 행동</span><b>${done}개 완료</b><small>더 작게 ${lowered} · 높이기 ${raised}</small></div>
+    <div class="record-stat"><span>말해본 횟수</span><b>${turns}턴</b></div>
+    <div class="record-stat"><span>실제 연결 준비</span><b>${state.draft ? '문의 문장 작성' : '정책 확인 중'}</b></div>
   </div>
+  <div class="card next-action-card">
+    <b>다음에 이어갈 행동 하나</b>
+    <p>가장 부담이 적은 것 하나만 골라두면, 다음 방문에서 여기부터 이어갈 수 있어요.</p>
+    <div class="next-action-list">${nextActions.map(action=>`
+      <button class="next-action" data-next-action="${escapeHtml(action)}" aria-pressed="${state.nextAction===action}">
+        <span>${escapeHtml(action)}</span>${state.nextAction===action?'<b>✓</b>':''}
+      </button>`).join('')}</div>
+  </div>
+  ${state.nextAction ? `<div class="saved-next">다음 시작점이 저장됐어요 · <b>${escapeHtml(state.nextAction)}</b></div>` : ''}
+  <p class="note">이 데모의 진행 기록은 이 기기의 브라우저에만 저장돼요. 넛지온의 목표는 서비스에 오래 머무르게 하는 것이 아니라, 실제 사람과 자원으로 연결된 뒤 필요 없어지는 것입니다.</p>
   <div class="row">
-    <button class="btn" data-restart="1">처음부터 다시 해보기</button>
+    <button class="btn" data-go="check">다음 진단 시작하기</button>
     <button class="btn quiet" data-clear-progress="1">이 기기의 기록 삭제</button>
   </div>`;
 }
@@ -968,6 +1002,13 @@ function bind(){
     if(canOpenScreen(target)) go(target);
   });
   stage.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
+  stage.querySelectorAll('[data-retry-policies]').forEach(b=>b.onclick=()=>{
+    state.resources=[]; state.resourcesError=null; loadPolicies();
+  });
+  stage.querySelectorAll('[data-next-action]').forEach(button=>button.onclick=()=>{
+    state.nextAction=button.dataset.nextAction;
+    render();
+  });
   stage.querySelectorAll('[data-prev-step]').forEach(b=>b.onclick=navigateBack);
   stage.querySelectorAll('[data-resume-saved]').forEach(b=>b.onclick=()=>{
     state.screen=state.resumeScreen||'check'; state.resumeScreen=null;
@@ -1205,7 +1246,9 @@ async function send(){
 }
 
 async function makeDraft(){
-  const p = state.profile;
+  const p = state.profile || {
+    level:3, levelName:'제한적 외출', barrierLabel:'정보 과부하', vision:'아직 정하지 않았어요'
+  };
   state.draft = '문장을 만드는 중…'; render();
   try{
     state.draft = await ask(
