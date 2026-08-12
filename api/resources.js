@@ -3,6 +3,18 @@ function numberOrNull(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+const REGION_PREFIX = {
+  '서울': '11', '부산': '26', '대구': '27', '인천': '28', '광주': '29',
+  '대전': '30', '울산': '31', '세종': '36', '경기': '41', '강원': '51',
+  '충북': '43', '충남': '44', '전북': '52', '전남': '46', '경북': '47',
+  '경남': '48', '제주': '50'
+};
+
+function textIncludesAny(value, words) {
+  const text = String(value || '').toLowerCase();
+  return words.some(word => text.includes(word));
+}
+
 function eligibility(resource, profile) {
   const reasons = [];
   const missing = [];
@@ -15,10 +27,21 @@ function eligibility(resource, profile) {
     else if ((min && age < min) || (max && age > max)) reasons.push(`연령 조건 ${min || ''}~${max || ''}세`);
   }
   const userRegion = String(profile.region || '');
-  // 온통청년은 법정동 숫자 코드를 제공한다. 현재 프로필은 시·도 이름을 받으므로
-  // 정확한 코드 매핑 전에는 불일치로 탈락시키지 않고 추가 확인으로 남긴다.
-  if (resource.region_codes?.length && !/^\d{2,5}$/.test(userRegion)) missing.push('세부 거주 지역');
-  else if (resource.region_codes?.length && userRegion && !resource.region_codes.some(code => code.startsWith(userRegion.slice(0, 2)))) reasons.push('거주 지역');
+  const regionPrefix = REGION_PREFIX[userRegion] || (/^\d{2,5}$/.test(userRegion) ? userRegion.slice(0, 2) : '');
+  const regionCodes = (resource.region_codes || []).map(String).filter(Boolean);
+  const nationwide = !regionCodes.length || regionCodes.some(code => ['00', '0', '전국'].includes(code));
+  if (!nationwide && regionPrefix && !regionCodes.some(code => code.startsWith(regionPrefix))) reasons.push('거주 지역');
+  else if (!nationwide && !regionPrefix) missing.push('거주 지역');
+
+  const education = String(profile.education || '');
+  const employment = String(profile.employment || '');
+  const educationText = `${raw.educationCodes || ''} ${resource.details || ''}`;
+  const employmentText = `${raw.employmentCodes || ''} ${resource.details || ''}`;
+  if (education && textIncludesAny(educationText, ['졸업자만', '졸업생만']) && education !== 'graduate') reasons.push('학업 상태');
+  if (education === 'student' && textIncludesAny(educationText, ['재학생 제외', '재학 중인 자 제외'])) reasons.push('학업 상태');
+  if (employment && textIncludesAny(employmentText, ['미취업자', '구직자']) && ['employed'].includes(employment)) reasons.push('취업 상태');
+  if (employment && textIncludesAny(employmentText, ['재직자']) && ['unemployed', 'inactive'].includes(employment)) reasons.push('취업 상태');
+
   const hasComplex = Boolean(raw.incomeType || raw.incomeDetails || raw.educationCodes || raw.employmentCodes || resource.details);
   if (reasons.length) return { result: 'unlikely', label: '현재 조건과 맞지 않을 수 있어요', reasons, missing };
   if (missing.length || hasComplex) return { result: 'needs_review', label: '추가 확인이 필요해요', reasons, missing };
@@ -53,10 +76,15 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: '정책 DB 조회에 실패했어요' });
   }
   const rows = await response.json();
-  const profile = { age: req.query.age, region: req.query.region };
+  const profile = {
+    age: req.query.age, region: req.query.region,
+    education: req.query.education, employment: req.query.employment
+  };
   const items = rows
     .filter(resource => category === 'all' || categoryOf(resource) === category)
-    .map(resource => ({
+    .map(resource => ({ resource, eligibility: eligibility(resource, profile) }))
+    .filter(({ resource, eligibility: result }) => result.result !== 'unlikely' && resource.application_status !== 'closed')
+    .map(({ resource, eligibility: result }) => ({
       id: resource.id, title: resource.title, summary: resource.summary,
       support: resource.support_details, organization: resource.organization_name,
       category: categoryOf(resource), applicationUrl: resource.application_url,
@@ -64,7 +92,7 @@ export default async function handler(req, res) {
       requiredDocuments: resource.required_documents, applicationStatus: resource.application_status,
       alwaysOpen: resource.always_open, endsAt: resource.application_ends_at,
       periodText: resource.raw_data?.applicationPeriod || '',
-      qualification: resource.details || '', eligibility: eligibility(resource, profile),
+      qualification: resource.details || '', eligibility: result,
       source: resource.source_key
     }));
   return res.status(200).json({ total: items.length, resources: items });
