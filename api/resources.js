@@ -133,7 +133,7 @@ export default async function handler(req, res) {
   const url = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) return res.status(500).json({ error: 'Supabase 공개 연결이 설정되지 않았어요' });
-  const category = String(req.query.category || 'all');
+  const categories = String(req.query.category || 'all').split(',').filter(Boolean);
   const query = String(req.query.q || '').trim().slice(0, 80);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
   const params = new URLSearchParams({ select: '*', status: 'eq.published', ai_analyzed_at: 'not.is.null', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
@@ -150,7 +150,7 @@ export default async function handler(req, res) {
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
   const candidates = rows
-    .filter(resource => category === 'all' || categoryOf(resource) === category)
+    .filter(resource => categories.includes('all') || categories.includes(categoryOf(resource)))
     .filter(resource => eligibility(resource, profile).result !== 'unlikely')
     .filter(resource => analyzedEligibility(resource, profile))
     .slice(0, 30);
