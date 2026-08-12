@@ -57,10 +57,26 @@ function categoryOf(resource) {
   return resource.ai_analysis?.category || resource.raw_data?.category || 'welfare';
 }
 
+function statusFromPeriod(resource) {
+  if (resource.always_open || resource.application_status === 'always') return 'always';
+  if (['open', 'upcoming', 'closed'].includes(resource.application_status)) return resource.application_status;
+  const text = String(resource.raw_data?.applicationPeriod || '');
+  if (/상시|수시/.test(text)) return 'always';
+  const dates = [...text.matchAll(/(20\d{2})[.\-/년]?\s*(\d{1,2})[.\-/월]?\s*(\d{1,2})/g)]
+    .map(([, y, m, d]) => new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59))
+    .filter(date => !Number.isNaN(date.getTime()));
+  if (dates.length < 2) return 'unknown';
+  const now = new Date();
+  if (now < dates[0]) return 'upcoming';
+  return now <= dates[dates.length - 1] ? 'open' : 'closed';
+}
+
 function analyzedEligibility(resource, profile) {
   const ai = resource.ai_analysis;
   if (!ai || ai.confidence < .55 || !ai.recommended || ai.practical_value < 4) return false;
-  if (!['open', 'always'].includes(ai.application_status)) return false;
+  const sourceStatus = statusFromPeriod(resource);
+  const applicationStatus = sourceStatus === 'unknown' ? ai.application_status : sourceStatus;
+  if (!['open', 'always'].includes(applicationStatus)) return false;
   const region = String(profile.region || '');
   if (!ai.nationwide && region && (!ai.target_regions?.length || !ai.target_regions.some(value => String(value).includes(region) || region.includes(String(value))))) return false;
   const userMin = numberOrNull(profile.ageMin) || numberOrNull(profile.age);
@@ -154,5 +170,5 @@ export default async function handler(req, res) {
       source: resource.source_key
     };
   });
-  return res.status(200).json({ total: items.length, resources: items });
+  return res.status(200).json({ total: items.length, resources: items, meta: { analyzed: rows.length, eligible: candidates.length } });
 }
