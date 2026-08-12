@@ -70,3 +70,5 @@ npm run build
 `supabase/migrations/`에는 사회적 리허설과 정책 연결 DB 스키마가 있습니다. 새 Supabase 프로젝트의 SQL Editor에서 마이그레이션 파일을 시간순으로 실행하거나 Supabase CLI로 적용합니다.
 
 브라우저는 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`만 사용합니다. 정책 수집 서버에서 사용하는 `SUPABASE_SERVICE_ROLE_KEY`는 Vercel의 서버 환경변수로만 보관하고 코드나 `VITE_` 변수에 넣지 않습니다.
+
+온통청년 정책은 Vercel Cron이 매일 `/api/sync-policies`를 호출해 `resources`에 갱신합니다. `CRON_SECRET`에는 충분히 긴 임의 문자열을 등록해야 하며, Vercel은 Cron 요청의 `Authorization` 헤더에 이 값을 자동으로 넣습니다.
