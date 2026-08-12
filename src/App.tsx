@@ -35,9 +35,6 @@ const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 type RehearsalProgress = {
   scenarioId: string | null;
   phase: Phase;
-  messages: ChatMessage[];
-  currentLine: string;
-  inputText: string;
   burdenBefore: number | null;
   burdenAfter: number | null;
   readiness: Readiness;
@@ -53,11 +50,8 @@ function loadRehearsalProgress(): RehearsalProgress | null {
     if (!saved || !['idle', 'prep', 'speaking', 'user-turn', 'post-burden', 'finished'].includes(saved.phase)) return null;
     return {
       scenarioId: typeof saved.scenarioId === 'string' ? saved.scenarioId : null,
-      // 음성 재생 중 페이지를 떠났다면 돌아왔을 때 사용자 차례로 안전하게 재개해요.
-      phase: saved.phase === 'speaking' ? 'user-turn' : saved.phase,
-      messages: Array.isArray(saved.messages) ? saved.messages : [],
-      currentLine: typeof saved.currentLine === 'string' ? saved.currentLine : '',
-      inputText: typeof saved.inputText === 'string' ? saved.inputText : '',
+      // 대화 원문을 저장하지 않으므로 진행 중이던 역할극은 준비 화면에서 다시 시작해요.
+      phase: saved.phase === 'speaking' || saved.phase === 'user-turn' ? 'prep' : saved.phase,
       burdenBefore: Number.isFinite(saved.burdenBefore) ? saved.burdenBefore : null,
       burdenAfter: Number.isFinite(saved.burdenAfter) ? saved.burdenAfter : null,
       readiness: ['hard', 'small', 'now'].includes(saved.readiness) ? saved.readiness : null,
@@ -221,13 +215,13 @@ function App() {
   const [scenario, setScenario] = useState<Scenario | null>(() =>
     SCENARIOS.find((item) => item.id === restoredProgress?.scenarioId) || null);
   const [phase, setPhase] = useState<Phase>(restoredProgress?.phase || 'idle');
-  const [messages, setMessages] = useState<ChatMessage[]>(restoredProgress?.messages || []);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
-  const [currentLine, setCurrentLine] = useState(restoredProgress?.currentLine || '');
+  const [currentLine, setCurrentLine] = useState('');
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [elapsed, setElapsed] = useState(restoredProgress?.elapsed || 0);
-  const [inputText, setInputText] = useState(restoredProgress?.inputText || '');
+  const [inputText, setInputText] = useState('');
 
   const [burdenBefore, setBurdenBefore] = useState<number | null>(restoredProgress?.burdenBefore ?? null);
   const [burdenAfter, setBurdenAfter] = useState<number | null>(restoredProgress?.burdenAfter ?? null);
@@ -328,14 +322,14 @@ function App() {
   useEffect(() => {
     try {
       localStorage.setItem(REHEARSAL_PROGRESS_KEY, JSON.stringify({
-        scenarioId: scenario?.id || null, phase, messages, currentLine, inputText,
+        scenarioId: scenario?.id || null, phase,
         burdenBefore, burdenAfter, readiness, selectedNextStep,
         promptHelpCount, rewriteCount, elapsed,
       } satisfies RehearsalProgress));
     } catch {
       // Private browsing or device policy may disable local storage.
     }
-  }, [scenario, phase, messages, currentLine, inputText, burdenBefore, burdenAfter,
+  }, [scenario, phase, burdenBefore, burdenAfter,
     readiness, selectedNextStep, promptHelpCount, rewriteCount, elapsed]);
 
   useEffect(() => {
@@ -632,13 +626,12 @@ function App() {
         setSaveError('저장 기능이 설정되지 않았어요. 환경변수를 확인해 주세요.');
         return;
       }
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('social_rehearsal_sessions')
-        .insert(insertData)
-        .select('id')
-        .maybeSingle();
+        .insert(insertData);
       if (error) throw error;
-      setSavedId(data?.id ?? null);
+      // 익명 사용자는 저장 결과를 다시 조회하지 않습니다.
+      setSavedId(sessionToken);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : '저장에 실패했어요');
     } finally {
