@@ -617,6 +617,7 @@ function renderInner(){
               rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
   stage.innerHTML = `${backButton()}${fn()}`;
   bind();
+  if(state.screen==='connect') window.NudgeonConnect?.mount();
   persistProgress();
   stage.querySelector('h1,h2')?.focus?.();
 }
@@ -848,44 +849,7 @@ function vRehearsal(){
 
 /* ── 04 AI 연결 ── */
 function vConnect(){
-  const p = state.profile || {
-    level:3, levelName:'제한적 외출', barrier:'overload', barrierLabel:'정보 과부하',
-    vision:'unsure', actionSize:'정보 한 곳만 확인하기'
-  };
-  const fallback = RESOURCES.filter(r=>r.levels.includes(p.level)).slice(0,3);
-  const list = state.resources.length ? state.resources : fallback;
-  return `
-  <div class="eyebrow">04 — Smart Matching</div>
-  <h2 class="mid" tabindex="-1">지금 단계에서 문턱이 가장 낮은 곳 3곳</h2>
-  <p class="lede">전부 보여주면 오히려 못 고르게 돼요. ${state.profile
-    ? `Lv.${p.level} · ${p.barrierLabel} 기준으로` : '자가진단 정보가 없어 우선 부담이 낮은 정책부터'}
-  <b>확인할 정책 3개만</b> 남겼어요.</p>
-  ${state.resourcesLoading ? `<div class="card"><p style="margin:0">온통청년에서 지금 신청할 수 있는 정책을 찾고 있어요.</p></div>` : ''}
-  ${list.map(r=>`
-    <div class="res">
-      <span class="tag">${escapeHtml(r.tag)}</span>
-      <h3>${escapeHtml(r.name)}</h3>
-      <p><b style="color:var(--ink)">왜 나에게?</b> ${escapeHtml(r.why)}</p>
-      ${safeHttpUrl(r.url) ? `<div class="row" style="margin-top:12px"><a class="btn quiet" href="${escapeHtml(safeHttpUrl(r.url))}" target="_blank" rel="noopener noreferrer">공식 페이지 보기</a></div>` : ''}
-    </div>`).join('')}
-  <div class="card" style="margin-top:20px">
-    <b style="font-size:15px">첫 문의 문장, 대신 써드릴게요</b>
-    <p style="margin:7px 0 0; font-size:14px; color:var(--ink-soft)">
-      보내지 않아도 돼요. 저장만 해두는 것도 한 걸음이에요.</p>
-    ${state.draft ? `<div class="draft" id="draftBox">${escapeHtml(state.draft)}</div>
-      <div class="row" style="margin-top:14px">
-        <button class="btn quiet" data-copy="1">복사하기</button>
-        <button class="btn quiet" data-draft="1">다시 써주세요</button></div>`
-    : `<div class="row" style="margin-top:14px"><button class="btn" data-draft="1">문의 문장 만들기</button></div>`}
-  </div>
-  <div class="row">
-    ${state.resourcesError ? '<button class="btn quiet" data-retry-policies="1">정책 다시 불러오기</button>' : ''}
-    ${state.profile ? '<button class="btn" data-go="record">오늘 한 일 정리하기</button>' : '<button class="btn quiet" data-go="check">자가진단하고 더 정확히 찾기</button>'}
-  </div>
-  <p class="note">${state.resourcesError
-    ? '온통청년 연결이 원활하지 않아 현재는 대비 데이터를 보여드리고 있어요.'
-    : '온통청년의 정책 정보를 바탕으로 보여드려요.'}
-  자격 여부는 참고용이며, 최종 신청 가능 여부는 운영기관에서 확인해주세요.</p>`;
+  return '<div id="connectApp"></div>';
 }
 
 function escapeHtml(value){

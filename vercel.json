@@ -1,4 +1,7 @@
 {
+  "crons": [
+    { "path": "/api/sync-policies", "schedule": "0 18 * * *" }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/home.html" },
     { "source": "/rehearsal", "destination": "/index.html" },
