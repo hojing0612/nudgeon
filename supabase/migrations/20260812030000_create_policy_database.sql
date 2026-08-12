@@ -245,9 +245,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_connection_profiles,
   public.user_saved_resources, public.notification_rules TO authenticated;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
--- Tighten the earlier rehearsal prototype: anonymous visitors may submit a session,
--- but they must not browse, edit, or delete other visitors' records.
-DROP POLICY IF EXISTS "anon_select_rehearsals" ON public.social_rehearsal_sessions;
-DROP POLICY IF EXISTS "anon_update_rehearsals" ON public.social_rehearsal_sessions;
-DROP POLICY IF EXISTS "anon_delete_rehearsals" ON public.social_rehearsal_sessions;
-REVOKE SELECT, UPDATE, DELETE ON public.social_rehearsal_sessions FROM anon;
+-- Tighten the earlier rehearsal prototype only when that optional table exists.
+-- A fresh Supabase project may apply the policy DB before the rehearsal migration.
+DO $$
+BEGIN
+  IF to_regclass('public.social_rehearsal_sessions') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "anon_select_rehearsals" ON public.social_rehearsal_sessions';
+    EXECUTE 'DROP POLICY IF EXISTS "anon_update_rehearsals" ON public.social_rehearsal_sessions';
+    EXECUTE 'DROP POLICY IF EXISTS "anon_delete_rehearsals" ON public.social_rehearsal_sessions';
+    EXECUTE 'REVOKE SELECT, UPDATE, DELETE ON public.social_rehearsal_sessions FROM anon';
+  END IF;
+END;
+$$;
