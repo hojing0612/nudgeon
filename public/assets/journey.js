@@ -937,6 +937,7 @@ function vRecord(){
   const notes=recordRead(RECORD_NOTES_KEY,{});
   const selectedIsToday=recordDate===new Date().toISOString().slice(0,10);
   const stages=[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']];
+  const normalizedStage=item=>({interested:'preparing',checking:'preparing',documents:'preparing',applied:'waiting'}[item.stage]||item.stage||'preparing');
   const activities=[];
   if(selectedIsToday && done) activities.push(`마이크로스텝 ${done}개 완료`);
   if(selectedIsToday && turns) activities.push(`사회적 리허설 ${turns}턴 진행`);
@@ -945,7 +946,7 @@ function vRecord(){
   <div class="eyebrow">05 — Record</div>
   <h2 class="mid" tabindex="-1">기록·성장</h2>
   <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>기록 저장</button></section></div>
-  <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>(item.stage||'preparing')===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
+  <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
