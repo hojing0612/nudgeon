@@ -537,7 +537,7 @@ function App() {
 
   const goToPreviousStep = useCallback(() => {
     if (!scenario || phase === 'idle') {
-      window.location.href = '/?screen=micro';
+      window.location.href = '/home.html?screen=micro';
       return;
     }
     if (phase === 'prep') {
