@@ -17,49 +17,47 @@
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
 <script src="/config.js"></script>
 
-<link rel="stylesheet" href="/assets/journey.css">
+<link rel="stylesheet" href="/assets/journey.css?v=20260812-3">
 </head>
 <body>
 
-<div class="app">
-  <!-- ───────── 왼쪽: 여정 레일 ───────── -->
-  <aside class="rail">
-    <div>
-      <div class="brand">nudge<span class="dot"> on</span></div>
-      <div class="brand-sub">bridge, not companion</div>
-    </div>
+<div class="app" id="appShell">
+  <header class="site-header">
+    <a class="brand" href="/home.html">nudge.on</a>
+    <nav aria-label="NudgeOn 여정 단계">
+      <ul class="journey" id="journey"></ul>
+    </nav>
+    <a class="home-link" href="/home.html">처음으로</a>
+  </header>
 
-    <div>
-      <svg class="window" viewBox="0 0 120 104" aria-hidden="true">
-        <rect x="4" y="4" width="112" height="96" rx="8" fill="#2C3833"/>
-        <g class="daylight">
-          <rect x="12" y="12" width="96" height="80" rx="4" fill="#F6E8C4"/>
-          <circle cx="82" cy="34" r="11" fill="#F3D488"/>
-          <path d="M12 74 L40 54 L60 70 L82 50 L108 72 L108 88 Q108 92 104 92 L16 92 Q12 92 12 88 Z" fill="#B9CBB4"/>
-        </g>
-        <rect x="12" y="12" width="96" height="80" rx="4" fill="none" stroke="#2C3833" stroke-width="1"/>
-        <rect x="58.5" y="12" width="3" height="80" fill="#2C3833"/>
-        <rect x="12" y="49" width="96" height="3" fill="#2C3833"/>
-        <g class="curtain l"><rect x="12" y="12" width="46" height="80" fill="#8C9A93" opacity=".95"/></g>
-        <g class="curtain r"><rect x="62" y="12" width="46" height="80" fill="#8C9A93" opacity=".95"/></g>
-        <rect x="4" y="4" width="112" height="96" rx="8" fill="none" stroke="#2C3833" stroke-width="7"/>
-      </svg>
+  <div class="workspace">
+    <aside class="rail" aria-label="현재 단계 창문">
+      <div class="window-wrap">
+      <div class="window-illustration" aria-hidden="true">
+        <div class="window-glow"></div>
+        <div class="window-frame">
+          <div class="window-pane daylight">
+            <div class="window-ground"></div>
+            <div class="window-path"></div>
+            <div class="window-bridge"></div>
+            <div class="window-support support-left"></div>
+            <div class="window-support support-right"></div>
+            <div class="curtain l"></div>
+            <div class="curtain r"></div>
+            <div class="window-bar vertical"></div>
+            <div class="window-bar horizontal"></div>
+          </div>
+        </div>
+      </div>
       <div class="window-note" id="windowNote">커튼은 아직 닫혀 있어요</div>
-    </div>
+      </div>
+    </aside>
 
-    <ul class="journey" id="journey"></ul>
-
-    <div class="rail-foot">
-      이 화면은 공모전 시연용 프로토타입입니다.<br>
-      기관 정보는 예시 데이터이며, 실제 서비스에서는 검증된 DB를 연결합니다.
-    </div>
-  </aside>
-
-  <!-- ───────── 오른쪽: 작업 화면 ───────── -->
-  <main class="stage"><div class="col" id="stage"></div></main>
+    <main class="stage"><div class="col" id="stage"></div></main>
+  </div>
 </div>
 
-<script src="/assets/connect-stage.js?v=20260812-2"></script>
-<script src="/assets/journey.js?v=20260812-2"></script>
+<script src="/assets/connect-stage.js?v=20260812-3"></script>
+<script src="/assets/journey.js?v=20260812-3"></script>
 </body>
 </html>

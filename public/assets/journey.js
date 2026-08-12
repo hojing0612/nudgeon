@@ -418,7 +418,6 @@ async function initializeApp(){
     state.screen = 'resume';
   }
   render();
-  if(state.screen==='connect') loadPolicies();
 }
 
 function createDemoSteps(barrier){
@@ -445,20 +444,6 @@ const SCENARIOS = [
     open:'네, 청년도전지원사업 담당입니다. 문의 주신 내용이 어떤 건가요?' }
 ];
 
-/* 온통청년 API가 꺼져 있거나 실패했을 때만 사용하는 대비 데이터 */
-const RESOURCES = [
-  { name:'청년미래센터 (고립·은둔 청년 지원)', tag:'공공 · 전담기관', levels:[1,2,3],
-    why:'집 밖 활동이 적은 단계부터 전담 사례관리로 이어지는 곳이라, 지금 단계에서 시작점으로 맞아요.' },
-  { name:'대학 학생상담센터', tag:'학교 · 상담', levels:[1,2,3,4,5],
-    why:'재학생이면 별도 자격 심사 없이 바로 신청할 수 있어서 첫 문턱이 가장 낮아요.' },
-  { name:'청년도전지원사업', tag:'공공 · 취업', levels:[3,4,5],
-    why:'구직을 잠시 멈춘 상태를 전제로 설계된 프로그램이라, 공백을 설명해야 하는 부담이 적어요.' },
-  { name:'지자체 청년센터 소모임', tag:'지역 · 관계', levels:[4,5],
-    why:'짧은 외출이 가능한 단계에서 사람과의 접촉을 조금씩 늘리기 좋아요.' },
-  { name:'온통청년 (청년정책 통합 포털)', tag:'공공 · 정보', levels:[1,2,3,4,5],
-    why:'흩어진 정책을 한 곳에서 볼 수 있어 정보 과부하를 줄여줘요.' }
-];
-
 /* ═══════════════════════════════════════════════════════════
    5. 상태 — 앱이 기억하는 모든 것. 여기만 바꾸고 다시 그린다.
    ═══════════════════════════════════════════════════════════ */
@@ -468,21 +453,19 @@ const state = {
   qi:0, answers:{},
   profile:null, report:null, group:null,
   micro:[], scenario:null, messages:[], busy:false,
-  draft:null, resources:[], resourcesLoading:false, resourcesError:null,
-  nextAction:null, visited:new Set()
+  draft:null, nextAction:null, visited:new Set()
 };
 
 const stage = document.getElementById('stage');
 const SCREENS = ['check','micro','rehearsal','connect','record'];
-const SCREEN_NAMES = ['자가진단','마이크로스텝','사회적 리허설','AI 연결','기록·성장'];
+const SCREEN_NAMES = ['자가진단','마이크로스텝','사회적 리허설','공공 복지 연결','기록·성장'];
 const STORAGE_KEY = 'nudgeon.journey.v1';
-const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,group:null,
     micro:[],scenario:null,messages:[],busy:false,draft:null,
-    resources:[],resourcesLoading:false,resourcesError:null,nextAction:null,visited:new Set()});
+    nextAction:null,visited:new Set()});
   if(ALL_QUESTIONS.length){
     const base=questionsOf(STAGE1);
     QUESTIONS=base.length ? base : ALL_QUESTIONS;
@@ -547,11 +530,6 @@ function canOpenScreen(screen){
   return false;
 }
 
-function getRehearsalSummary(){
-  try{return JSON.parse(localStorage.getItem(REHEARSAL_SUMMARY_KEY)||'null');}
-  catch{return null;}
-}
-
 /* ═══════════════════════════════════════════════════════════
    6. AI 호출 — 실패해도 앱이 멈추지 않게 항상 대비책을 둔다
    ═══════════════════════════════════════════════════════════ */
@@ -614,6 +592,7 @@ function render(){
 
 function renderInner(){
   renderRail();
+  document.getElementById('appShell')?.setAttribute('data-screen', state.screen);
   const fn = {intro:vIntro, resume:vResume, check:vCheck, bridge:vBridge, report:vReport, micro:vMicro,
               rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
   stage.innerHTML = `${backButton()}${fn()}`;
@@ -664,19 +643,23 @@ function renderRail(){
 /* ── 00 시작 ── */
 function vIntro(){
   return `
-  <div class="eyebrow">고립·은둔 청년 · 사회복귀 지원</div>
-  <h1 class="big" tabindex="-1">지금 필요한 건<br>큰 결심이 아니라,<br>오늘 할 수 있는 가장 작은 행동 하나예요.</h1>
-  <p class="lede">넛지온은 상담을 대신하지 않아요. 상담·복지·취업 자원에 <b>도달하기 전에 멈추는 지점</b>을
-  찾아서, 그 한 걸음을 대신 잘게 쪼개주는 다리 역할을 합니다. 평가하지 않고, 오늘 못 해도 기록에 남지 않아요.</p>
-  <div class="card">
-    <b style="font-size:15px">짧은 질문 몇 개로 출발점을 찾아볼게요</b>
-    <p style="margin:8px 0 0; font-size:14px; color:var(--ink-soft)">
-      가벼운 질문으로 시작해서, 답변에 따라 필요한 만큼만 더 여쭤봐요. 보통 3~5분쯤 걸려요.
-      진단이 아니라 시작점을 찾기 위한 질문이고, 어려운 문항은 건너뛰어도 괜찮아요.</p>
-  </div>
-  <div class="row"><button class="btn" data-go="check">시작하기</button></div>
-  <p class="note">이 프로토타입은 2026 ZERO to AI Challenge 제안서 「Nudge On」을 실제로 움직이게 만든 버전입니다.
-  자가진단 → 마이크로스텝 → 사회적 리허설 → AI 연결 → 기록의 5단계 루프를 모두 눌러볼 수 있어요.</p>`;
+  <section class="home-hero">
+    <p class="home-kicker">조금씩, 나에게 맞는 속도로</p>
+    <h1 class="big" tabindex="-1">오늘 할 수 있는<br>가장 작은 행동부터</h1>
+    <p class="lede">몇 가지 질문에 답하면 지금 상태에 맞는 작은 행동을 제안해드려요. 필요하다면 대화를 연습하고, 이용할 수 있는 지원 정보도 함께 찾아볼 수 있어요.</p>
+    <button class="btn hero-cta" data-go="check">나의 첫 단계 시작하기</button>
+  </section>
+  <section class="home-path" id="journeyIntro">
+    <div class="home-section-head"><div><span>HOW NUDGEON WORKS</span><h2>작은 행동으로 이어지는<br>5단계 과정</h2></div><p>현재 상태를 확인하고, 오늘 할 수 있는 행동부터 시작합니다. 모든 단계는 이전으로 돌아가거나 잠시 멈출 수 있어요.</p></div>
+    <ol>
+      <li><b>01</b><div><strong>지금 상태 확인하기</strong><span>질문으로 생활 리듬과 현재 부담을 가볍게 확인합니다.</span></div></li>
+      <li><b>02</b><div><strong>작은 행동 고르기</strong><span>지금 할 수 있는 마이크로스텝을 고르고 크기를 조정합니다.</span></div></li>
+      <li><b>03</b><div><strong>대화 미리 연습하기</strong><span>실제 상황 전에 필요한 말을 적어보고 부담 없이 연습합니다.</span></div></li>
+      <li><b>04</b><div><strong>지원 정보 찾아보기</strong><span>지역과 필요에 맞춰 이용 가능한 지원 정보를 확인합니다.</span></div></li>
+      <li><b>05</b><div><strong>기록 확인하기</strong><span>완료한 행동과 변화를 기록하고 다음 단계를 선택합니다.</span></div></li>
+    </ol>
+  </section>
+  <section class="home-explain"><div class="home-mini-window" aria-hidden="true"><span></span><i></i></div><div><span>ONE STEP AT A TIME</span><h2>창문이 열리듯,<br>가능한 만큼만 시작합니다</h2><p>NudgeOn은 현재 상태 확인부터 작은 행동, 대화 연습과 지원 정보 탐색까지 한 흐름으로 연결합니다. 빠른 변화를 요구하지 않고 사용자가 정한 속도를 존중합니다.</p><button class="btn ghost" data-go="check">5단계 살펴보기</button></div></section>`;
 }
 
 function vResume(){
@@ -874,86 +857,53 @@ function escapeHtml(value){
   })[character]);
 }
 
-function safeHttpUrl(value){
-  try{
-    const url=new URL(value);
-    return ['http:','https:'].includes(url.protocol) ? url.href : '';
-  }catch{return '';}
-}
-
-function policyKeyword(profile){
-  const byVision = {work:'취업', study:'교육', social:'청년센터'};
-  if(profile.barrier==='energy') return '복지';
-  return byVision[profile.vision] || '청년지원';
-}
-
-function policyReason(policy, profile){
-  const target = policy.support || policy.summary || '지원 내용과 신청 방법을 확인할 수 있어요.';
-  const shortTarget = target.length > 110 ? target.slice(0,107)+'…' : target;
-  return `Lv.${profile.level} · ${profile.barrierLabel} 단계에서 살펴볼 수 있는 ${policy.category || '청년지원'} 정책이에요. ${shortTarget}`;
-}
-
-async function loadPolicies(){
-  if(state.resourcesLoading || state.resources.length) return;
-  state.resourcesLoading=true;
-  state.resourcesError=null;
-  render();
-  try{
-    const profile=state.profile || {
-      level:3, barrier:'overload', barrierLabel:'정보 과부하', vision:'unsure'
-    };
-    const keyword=policyKeyword(profile);
-    const response=await fetch(`/api/policies?keyword=${encodeURIComponent(keyword)}&pageSize=20`);
-    if(!response.ok) throw new Error('API '+response.status);
-    const data=await response.json();
-    state.resources=(data.policies||[]).slice(0,3).map(policy=>({
-      name:policy.title,
-      tag:[policy.category,policy.subcategory].filter(Boolean).join(' · ') || '온통청년',
-      why:policyReason(policy,profile),
-      url:policy.applicationUrl || ''
-    }));
-    if(!state.resources.length) throw new Error('검색 결과 없음');
-  }catch(error){
-    console.warn('온통청년 정책을 불러오지 못했습니다.',error);
-    state.resourcesError='정책 데이터를 불러오지 못했어요';
-  }finally{
-    state.resourcesLoading=false;
-    if(state.screen==='connect') render();
-  }
-}
-
 /* ── 05 기록 ── */
 const RECORD_NOTES_KEY='nudgeon.record-notes.v1';
+const REHEARSAL_HISTORY_KEY='nudgeon.rehearsal-history.v1';
 let recordDate=new Date().toISOString().slice(0,10);
 function recordRead(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
-function monthCalendar(selected){
+function datePart(value){return typeof value==='string'?value.slice(0,10):''}
+function monthCalendar(selected,activityDates){
   const date=new Date(`${selected}T12:00:00`),year=date.getFullYear(),month=date.getMonth();
   const first=new Date(year,month,1),last=new Date(year,month+1,0),today=new Date().toISOString().slice(0,10);
   const cells=Array(first.getDay()).fill('<span></span>');
   for(let day=1;day<=last.getDate();day++){
     const key=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today':''}">${day}</button>`);
+    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today ':''}${activityDates.has(key)?'has-activity':''}">${day}</button>`);
   }
   return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div>`;
 }
 
 function vRecord(){
-  const done = state.micro.filter(s=>s.done).length;
-  const rehearsal = getRehearsalSummary();
-  const turns = rehearsal?.completedTurns || 0;
   const saved=Object.values(recordRead('nudgeon.saved-resources.v1',{}));
+  const history=recordRead(REHEARSAL_HISTORY_KEY,[]);
+  const legacyRehearsal=recordRead('nudgeon.rehearsal-summary.v1',null);
+  const rehearsals=history.length?history:(legacyRehearsal?[legacyRehearsal]:[]);
   const notes=recordRead(RECORD_NOTES_KEY,{});
   const selectedIsToday=recordDate===new Date().toISOString().slice(0,10);
   const stages=[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']];
+  const stageLabels={preparing:'준비 중',waiting:'결과 기다리는 중',completed:'완료'};
   const normalizedStage=item=>({interested:'preparing',checking:'preparing',documents:'preparing',applied:'waiting'}[item.stage]||item.stage||'preparing');
   const activities=[];
-  if(selectedIsToday && done) activities.push(`마이크로스텝 ${done}개 완료`);
-  if(selectedIsToday && turns) activities.push(`사회적 리허설 ${turns}턴 진행`);
-  saved.filter(item=>(item.savedAt||'').slice(0,10)===recordDate).forEach(item=>activities.push(`${item.resource?.title||'지원'} 저장`));
+  state.micro.filter(step=>datePart(step.completedAt)===recordDate)
+    .forEach(step=>activities.push(`마이크로스텝 완료 · ${step.text}`));
+  rehearsals.filter(item=>datePart(item.savedAt)===recordDate)
+    .forEach(item=>activities.push(`사회적 리허설 ${item.completedTurns||0}턴 · ${item.scenarioTitle||'상황 연습'}`));
+  saved.filter(item=>datePart(item.savedAt)===recordDate)
+    .forEach(item=>activities.push(`지원 저장 · ${item.resource?.title||'지원'}`));
+  saved.forEach(item=>(item.stageHistory||[]).filter(event=>datePart(event.changedAt)===recordDate)
+    .forEach(event=>activities.push(`지원 상태 변경 · ${item.resource?.title||'지원'} → ${stageLabels[event.stage]||event.stage}`)));
+  const activityDates=new Set([
+    ...state.micro.map(step=>datePart(step.completedAt)),
+    ...rehearsals.map(item=>datePart(item.savedAt)),
+    ...saved.map(item=>datePart(item.savedAt)),
+    ...saved.flatMap(item=>(item.stageHistory||[]).map(event=>datePart(event.changedAt))),
+    ...Object.keys(notes)
+  ].filter(Boolean));
   return `
   <div class="eyebrow">05 — Record</div>
   <h2 class="mid" tabindex="-1">기록·성장</h2>
-  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>기록 저장</button></section></div>
+  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>기록 저장</button></section></div>
   <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
@@ -971,9 +921,6 @@ function bind(){
     if(canOpenScreen(target)) go(target);
   });
   stage.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>go(b.dataset.go));
-  stage.querySelectorAll('[data-retry-policies]').forEach(b=>b.onclick=()=>{
-    state.resources=[]; state.resourcesError=null; loadPolicies();
-  });
   stage.querySelectorAll('[data-next-action]').forEach(button=>button.onclick=()=>{
     state.nextAction=button.dataset.nextAction;
     render();
@@ -990,7 +937,6 @@ function bind(){
     state.screen=state.resumeScreen||'check'; state.resumeScreen=null;
     if(state.screen==='rehearsal'){ persistProgress(); window.location.href='/rehearsal'; return; }
     render();
-    if(state.screen==='connect') loadPolicies();
   });
   stage.querySelectorAll('[data-start-fresh]').forEach(b=>b.onclick=()=>clearProgress('intro'));
   stage.querySelectorAll('[data-clear-progress]').forEach(b=>b.onclick=()=>{
@@ -1017,7 +963,10 @@ function bind(){
   });
   stage.querySelectorAll('[data-skip]').forEach(b=>b.onclick=()=>answer('(답하지 않음)'));
   stage.querySelectorAll('[data-tick]').forEach(b=>b.onclick=()=>{
-    const i=+b.dataset.tick; state.micro[i].done=!state.micro[i].done; render();
+    const i=+b.dataset.tick,step=state.micro[i];
+    step.done=!step.done;
+    step.completedAt=step.done?new Date().toISOString():null;
+    render();
   });
   stage.querySelectorAll('[data-smaller]').forEach(b=>b.onclick=()=>makeSmaller(+b.dataset.smaller));
   stage.querySelectorAll('[data-larger]').forEach(b=>b.onclick=()=>makeLarger(+b.dataset.larger));
@@ -1059,7 +1008,6 @@ function go(s){
   state.screen = s;
   render();
   if(s==='micro' && !state.micro.length) loadSteps();
-  if(s==='connect') loadPolicies();
 }
 
 function navigateBack(){
@@ -1182,6 +1130,7 @@ function adjustMicrostep(i,direction){
   cur.why=group.why[next];
   cur.supportOpen=false;
   cur.done=false;
+  cur.completedAt=null;
   if(direction<0) cur.adjustedDown=(cur.adjustedDown||0)+1;
   else cur.adjustedUp=(cur.adjustedUp||0)+1;
   render();
