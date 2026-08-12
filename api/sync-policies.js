@@ -57,11 +57,14 @@ function resourceFrom(policy) {
 
 async function supabase(path, key, options = {}) {
   const url = process.env.VITE_SUPABASE_URL;
+  const authHeaders = { apikey: key };
+  // New sb_secret_* keys use the apikey header. Only legacy JWT service keys
+  // are valid Bearer tokens.
+  if (!key.startsWith('sb_')) authHeaders.Authorization = `Bearer ${key}`;
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...options,
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
+      ...authHeaders,
       'Content-Type': 'application/json',
       Prefer: 'resolution=merge-duplicates,return=representation',
       ...(options.headers || {})
