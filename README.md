@@ -7,7 +7,7 @@
 - `/` — 전체 5단계 여정 (`public/home.html`)
 - `/rehearsal` — React 기반 사회적 리허설 (`src/`)
 - `/api/chat` — AI 대화 API (`api/chat.js`)
-- `/api/policies` — 온통청년 정책 조회 API (`api/policies.js`)
+- `/api/resources` — 검증된 지원정책 추천 API (`api/resources.js`)
 
 Vercel의 경로 연결은 `vercel.json`에서 관리합니다. 기존처럼 React 안에 홈을 iframe으로 넣지 않습니다.
 
