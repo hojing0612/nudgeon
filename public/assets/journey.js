@@ -144,7 +144,23 @@ async function loadCsvSheet(sheetName){
   const response = await fetch(sheetCsvUrl(sheetName), {cache:'no-store'});
   if(!response.ok) throw new Error(`${sheetName} 시트 요청 실패: ${response.status}`);
   const csv = await response.text();
-  const parsed = Papa.parse(csv, {header:true, skipEmptyLines:true, dynamicTyping:true});
+  const knownHeaders = [
+    'survey','domain','question_id','question_order','question_text','option_order','option_text',
+    'option_value','score','flag','required','active','show_if','note','step_id','chain_id',
+    'chain_label','difficulty','title','why_text','feature_type','support_label','barrier_id',
+    'barrier_label','recommendation_order','start_difficulty','feature_title',
+    'feature_description','choice_order','choice_title','choice_detail'
+  ];
+  const normalizeHeader = header => {
+    const value=String(header||'').trim();
+    return knownHeaders.find(name=>value===name || value.endsWith(` ${name}`)) || value;
+  };
+  const parsed = Papa.parse(csv, {
+    header:true,
+    skipEmptyLines:true,
+    dynamicTyping:true,
+    transformHeader:normalizeHeader
+  });
   if(parsed.errors?.length) console.warn(`${sheetName} CSV 경고`, parsed.errors);
   return parsed.data.filter(row=>Object.values(row).some(v=>String(v ?? '').trim() !== ''));
 }
@@ -451,7 +467,7 @@ const state = {
   screen:'intro',
   resumeScreen:null,
   qi:0, answers:{},
-  profile:null, report:null, group:null,
+  profile:null, report:null, reportLoading:false, group:null,
   micro:[], scenario:null, messages:[], busy:false,
   draft:null, nextAction:null, visited:new Set()
 };
@@ -463,7 +479,7 @@ const STORAGE_KEY = 'nudgeon.journey.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 
 function resetState(screen='intro'){
-  Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,group:null,
+  Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,reportLoading:false,group:null,
     micro:[],scenario:null,messages:[],busy:false,draft:null,
     nextAction:null,visited:new Set()});
   if(ALL_QUESTIONS.length){
@@ -492,7 +508,7 @@ function restoreProgress(){
     if(saved?.version!==1 || !saved.screen) return false;
     Object.assign(state,{
       screen:saved.screen,qi:Number(saved.qi)||0,answers:saved.answers||{},profile:saved.profile||null,
-      report:saved.report||null,group:saved.group||null,micro:Array.isArray(saved.micro)?saved.micro:[],
+      report:saved.report||null,reportLoading:false,group:saved.group||null,micro:Array.isArray(saved.micro)?saved.micro:[],
       draft:saved.draft||null,nextAction:saved.nextAction||null,
       visited:new Set(Array.isArray(saved.visited)?saved.visited:[])
     });
@@ -759,13 +775,15 @@ function vReport(){
     ${p.evidence.map(item=>`<p style="margin:8px 0 0; font-size:14px; color:var(--ink-soft)">· ${item}</p>`).join('')}
   </div>` : ''}
   <div class="card">
-    ${r ? r.split('\n').filter(Boolean).map(l=>`<p style="margin:0 0 10px; font-size:15px">${l}</p>`).join('')
+    ${state.reportLoading
+        ? `<p class="report-loading" role="status" style="margin:0; font-size:15px">응답을 바탕으로 결과를 정리하고 있어요.</p>`
+        : r ? r.split('\n').filter(Boolean).map(l=>`<p style="margin:0 0 10px; font-size:15px">${l}</p>`).join('')
         : `<p style="margin:0; font-size:15px">
              ${p.levelName} 단계에서 <b>${p.barrierLabel}</b> 때문에 다음 걸음이 멈춰 있어요.
              그래서 넛지온은 큰 목표 대신, 이 장벽을 넘지 않고 <b>돌아갈 수 있는 아주 작은 행동</b>부터 제안할게요.</p>`}
   </div>
   <div class="row">
-    <button class="btn" data-go="micro">오늘 할 수 있는 것 보기</button>
+    <button class="btn" data-go="micro" ${state.reportLoading?'disabled':''}>오늘 할 수 있는 것 보기</button>
     <button class="btn quiet" data-restart="1">다시 답하기</button>
   </div>
   <p class="note">넛지온은 사용자를 '고립 청년'으로 분류하지 않아요.
@@ -782,7 +800,7 @@ function vMicro(){
   부담되면 더 작게, 너무 쉬우면 한 단계 높여서 나에게 맞는 크기를 찾을 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
-      <div class="step-item ${i===0?'today':''} ${s.done?'done':''}">
+      <div class="step-item ${s.done?'done':''}">
         <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="완료">${s.done?'✓':''}</button>
         <div><div class="step-text">${s.text}</div>
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
@@ -874,6 +892,7 @@ function escapeHtml(value){
 const RECORD_NOTES_KEY='nudgeon.record-notes.v1';
 const REHEARSAL_HISTORY_KEY='nudgeon.rehearsal-history.v1';
 let recordDate=new Date().toISOString().slice(0,10);
+let recordSaveStatus={date:'',ok:null,message:''};
 function recordRead(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
 function datePart(value){return typeof value==='string'?value.slice(0,10):''}
 function monthCalendar(selected,activityDates){
@@ -916,7 +935,7 @@ function vRecord(){
   return `
   <div class="eyebrow">05 — Record</div>
   <h2 class="mid" tabindex="-1">기록·성장</h2>
-  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>기록 저장</button></section></div>
+  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
   <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
@@ -938,12 +957,25 @@ function bind(){
     state.nextAction=button.dataset.nextAction;
     render();
   });
-  stage.querySelectorAll('[data-record-date]').forEach(button=>button.onclick=()=>{recordDate=button.dataset.recordDate;render()});
+  stage.querySelectorAll('[data-record-date]').forEach(button=>button.onclick=()=>{recordDate=button.dataset.recordDate;recordSaveStatus={date:'',ok:null,message:''};render()});
   stage.querySelectorAll('[data-record-month]').forEach(button=>button.onclick=()=>{
-    const date=new Date(`${recordDate}T12:00:00`);date.setMonth(date.getMonth()+Number(button.dataset.recordMonth));date.setDate(1);recordDate=date.toISOString().slice(0,10);render();
+    const date=new Date(`${recordDate}T12:00:00`);date.setMonth(date.getMonth()+Number(button.dataset.recordMonth));date.setDate(1);recordDate=date.toISOString().slice(0,10);recordSaveStatus={date:'',ok:null,message:''};render();
   });
   stage.querySelector('[data-save-note]')?.addEventListener('click',()=>{
-    const notes=recordRead(RECORD_NOTES_KEY,{});notes[recordDate]=document.getElementById('recordNote')?.value||'';localStorage.setItem(RECORD_NOTES_KEY,JSON.stringify(notes));render();
+    const value=document.getElementById('recordNote')?.value||'';
+    const notes=recordRead(RECORD_NOTES_KEY,{});
+    if(value.trim()) notes[recordDate]=value;
+    else delete notes[recordDate];
+    try{
+      localStorage.setItem(RECORD_NOTES_KEY,JSON.stringify(notes));
+      const verified=recordRead(RECORD_NOTES_KEY,{});
+      if(value.trim() && verified[recordDate]!==value) throw new Error('저장 확인 실패');
+      recordSaveStatus={date:recordDate,ok:true,message:value.trim()?`${recordDate} 기록을 이 기기에 저장했어요.`:'이 날짜의 짧은 기록을 삭제했어요.'};
+    }catch(error){
+      console.warn('짧은 기록 저장 실패:',error);
+      recordSaveStatus={date:recordDate,ok:false,message:'기록을 저장하지 못했어요. 브라우저의 사이트 데이터 설정을 확인해 주세요.'};
+    }
+    render();
   });
   stage.querySelectorAll('[data-prev-step]').forEach(b=>b.onclick=navigateBack);
   stage.querySelectorAll('[data-resume-saved]').forEach(b=>b.onclick=()=>{
@@ -1096,11 +1128,14 @@ function vBridge(){
 
 async function finishCheck(){
   state.profile = buildProfile(state.answers);
+  const reportProfile = state.profile;
+  state.report = null;
+  state.reportLoading = true;
   state.visited.add('check');
   state.screen = 'report';
   render();
   try{
-    state.report = await ask(
+    const generatedReport = await ask(
       [{role:'user',content:
         `현재 연결 단계: Lv.${state.profile.level} ${state.profile.levelName}\n`+
         `주요 장벽: ${state.profile.barrierLabel}\n`+
@@ -1111,16 +1146,27 @@ async function finishCheck(){
 "괜찮아요","할 수 있어요" 같은 말은 금지. 지금 상태를 담담하게 서술하고,
 왜 이 장벽 때문에 멈추는지를 설명하고, 그래서 어떤 크기의 행동부터 시작할지를 말한다.
 반말 금지, 존댓말. 2~3문장. 다른 말 없이 리포트만 출력.`);
-    if(state.screen==='report') render();
-  }catch(e){ console.warn('리포트 생성 실패, 기본 문구 사용:', e); }
+    if(state.profile !== reportProfile) return;
+    state.report = generatedReport;
+  }catch(e){
+    console.warn('리포트 생성 실패, 기본 문구 사용:', e);
+  }finally{
+    if(state.profile === reportProfile){
+      state.reportLoading = false;
+      if(state.screen==='report') render();
+      else persistProgress();
+    }
+  }
 }
 
 async function loadSteps(regen=false){
   const p = state.profile;
   /* 발표 중 네트워크 상태와 무관하게 항상 같은 완성도 높은 데모를 보여준다. */
-  const presets = createDemoSteps(p.barrier);
-  if(regen) presets.push(presets.shift());
-  state.micro = presets;
+  if(regen && state.micro.length>1){
+    state.micro = [...state.micro.slice(1), state.micro[0]];
+  }else{
+    state.micro = createDemoSteps(p.barrier);
+  }
   render();
 }
 
