@@ -73,7 +73,7 @@ function statusFromPeriod(resource) {
 
 function analyzedEligibility(resource, profile) {
   const ai = resource.ai_analysis;
-  if (!ai || ai.confidence < .55 || !ai.recommended || ai.practical_value < 4) return false;
+  if (!ai || ai.confidence < .55) return basicEligibility(resource, profile);
   const sourceStatus = statusFromPeriod(resource);
   const applicationStatus = sourceStatus === 'unknown' ? ai.application_status : sourceStatus;
   if (!['open', 'always'].includes(applicationStatus)) return false;
@@ -142,7 +142,7 @@ export default async function handler(req, res) {
   const showAll = !categories.length || categories.includes('all');
   const query = String(req.query.q || '').trim().slice(0, 80);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
-  const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
+  const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: '1000', order: 'verified_at.desc.nullslast,title.asc' });
   if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
   const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
   if (!response.ok) {
@@ -158,7 +158,7 @@ export default async function handler(req, res) {
   const candidates = rows
     .filter(resource => showAll || categories.includes(categoryOf(resource)))
     .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile))
-    .slice(0, 30);
+    .slice(0, Math.min(limit, 100));
   const ranked = await personalizedOrder(candidates, profile);
   const items = ranked.map(resource => {
     const result = eligibility(resource, profile);
