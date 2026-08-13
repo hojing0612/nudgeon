@@ -57,7 +57,7 @@ export default async function handler(req, res) {
       try {
         const result = await callClaudeTool({
           name:'save_policy_analysis',
-          description:'각 청년정책 원문을 분석해 실질 혜택, 정확한 대상 조건, 신청 상태, 추천 가치와 원문 근거를 구조화한다. 반드시 입력된 각 정책의 분석을 analyses 배열에 넣는다. 교육·취업 상태 배열에는 명시적으로 신청 가능한 상태만 넣고 제한이 없으면 빈 배열로 둔다. 단순 행사·위원회·홍보·공간 운영은 practical_value를 낮게 주고 recommended=false로 둔다. 현금성 지원, 주거비, 교육비, 취업·훈련, 실제 예약 가능한 상담처럼 사용자가 직접 받을 혜택은 높게 평가한다.',
+          description:'각 청년정책 원문을 분석해 실질 혜택, 정확한 대상 조건, 신청 상태, 추천 가치와 원문 근거를 구조화한다. 반드시 입력된 각 정책의 분석을 analyses 배열에 넣는다. 카테고리는 기관 명칭이 아니라 사용자가 직접 받는 핵심 혜택으로 정한다. 취업상담·일자리센터·면접지원은 career이지 counseling이 아니다. 전월세·보증금·임대·청약은 housing이다. counseling은 심리상담·정신건강·치료비·고립은둔 지원에 한정한다. 교육·취업 상태 배열에는 명시적으로 신청 가능한 상태만 넣고 제한이 없으면 빈 배열로 둔다. 단순 기관/센터 소개, 홈페이지·포털·SNS 안내, 정보 제공, 행사·위원회·홍보·공간 운영은 practical_value를 0~3으로 주고 recommended=false로 둔다. 구체적인 신청·예약·지원 경로가 있고 현금성 지원, 주거비, 교육비, 취업·훈련, 치료비, 실제 예약 가능한 상담처럼 사용자가 직접 받을 혜택만 recommended=true로 둔다. 지역명과 주관기관 소재지를 혼동하지 말고 실제 지원대상 지역만 target_regions에 기록한다.',
           schema:analysisSchema,
           input:{ today:new Date().toISOString().slice(0,10), policies:rows },
           maxTokens:8000
