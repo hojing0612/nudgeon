@@ -39,20 +39,37 @@ function normalizeAnalysis(analysis) {
   };
 }
 
+function analysesFrom(result) {
+  if (!Array.isArray(result?.analyses) || !result.analyses.length) {
+    throw new Error('Anthropic 응답에 analyses 배열이 없어요');
+  }
+  return result.analyses;
+}
+
 export default async function handler(req, res) {
   if (!['GET','POST'].includes(req.method)) return res.status(405).json({ error:'GET 또는 POST 요청만 받아요' });
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error:'분석 권한이 없어요' });
   try {
     const rows = await db('resources?select=id,title,summary,details,support_details,organization_name,application_status,always_open,region_codes,raw_data&status=eq.published&ai_analyzed_at=is.null&limit=20&order=verified_at.desc.nullslast');
     if (!rows.length) return res.status(200).json({ success:true, analyzed:0, remaining:false });
-    const result = await callClaudeTool({
-      name:'save_policy_analysis',
-      description:'각 청년정책 원문을 분석해 실질 혜택, 정확한 대상 조건, 신청 상태, 추천 가치와 원문 근거를 구조화한다. 교육·취업 상태 배열에는 명시적으로 신청 가능한 상태만 넣고 제한이 없으면 빈 배열로 둔다. 단순 행사·위원회·홍보·공간 운영은 practical_value를 낮게 주고 recommended=false로 둔다. 현금성 지원, 주거비, 교육비, 취업·훈련, 실제 예약 가능한 상담처럼 사용자가 직접 받을 혜택은 높게 평가한다.',
-      schema:analysisSchema,
-      input:{ today:new Date().toISOString().slice(0,10), policies:rows },
-      maxTokens:8000
-    });
-    const byId = new Map(result.analyses.map(item => [item.id,item]));
+    let analyses;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const result = await callClaudeTool({
+          name:'save_policy_analysis',
+          description:'각 청년정책 원문을 분석해 실질 혜택, 정확한 대상 조건, 신청 상태, 추천 가치와 원문 근거를 구조화한다. 반드시 입력된 각 정책의 분석을 analyses 배열에 넣는다. 교육·취업 상태 배열에는 명시적으로 신청 가능한 상태만 넣고 제한이 없으면 빈 배열로 둔다. 단순 행사·위원회·홍보·공간 운영은 practical_value를 낮게 주고 recommended=false로 둔다. 현금성 지원, 주거비, 교육비, 취업·훈련, 실제 예약 가능한 상담처럼 사용자가 직접 받을 혜택은 높게 평가한다.',
+          schema:analysisSchema,
+          input:{ today:new Date().toISOString().slice(0,10), policies:rows },
+          maxTokens:8000
+        });
+        analyses = analysesFrom(result);
+        break;
+      } catch (error) {
+        if (attempt === 2) throw error;
+        console.warn('정책 AI 분석 응답 누락으로 한 번 재시도해요');
+      }
+    }
+    const byId = new Map(analyses.map(item => [item.id,item]));
     for (const row of rows) {
       const rawAnalysis = byId.get(row.id);
       if (!rawAnalysis) continue;

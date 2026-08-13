@@ -88,6 +88,11 @@ function analyzedEligibility(resource, profile) {
   return true;
 }
 
+function basicEligibility(resource, profile) {
+  if (eligibility(resource, profile).result === 'unlikely') return false;
+  return ['open', 'always'].includes(statusFromPeriod(resource));
+}
+
 const rankingSchema = {
   type: 'object', additionalProperties: false, required: ['recommended_ids'],
   properties: { recommended_ids: { type: 'array', items: { type: 'string' } } }
@@ -133,10 +138,11 @@ export default async function handler(req, res) {
   const url = process.env.VITE_SUPABASE_URL;
   const key = process.env.VITE_SUPABASE_ANON_KEY;
   if (!url || !key) return res.status(500).json({ error: 'Supabase 공개 연결이 설정되지 않았어요' });
-  const category = String(req.query.category || 'all');
+  const categories = String(req.query.category || 'all').split(',').map(value => value.trim()).filter(Boolean);
+  const showAll = !categories.length || categories.includes('all');
   const query = String(req.query.q || '').trim().slice(0, 80);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
-  const params = new URLSearchParams({ select: '*', status: 'eq.published', ai_analyzed_at: 'not.is.null', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
+  const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: String(limit), order: 'verified_at.desc.nullslast,title.asc' });
   if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
   const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
   if (!response.ok) {
@@ -150,9 +156,8 @@ export default async function handler(req, res) {
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
   const candidates = rows
-    .filter(resource => category === 'all' || categoryOf(resource) === category)
-    .filter(resource => eligibility(resource, profile).result !== 'unlikely')
-    .filter(resource => analyzedEligibility(resource, profile))
+    .filter(resource => showAll || categories.includes(categoryOf(resource)))
+    .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile))
     .slice(0, 30);
   const ranked = await personalizedOrder(candidates, profile);
   const items = ranked.map(resource => {
