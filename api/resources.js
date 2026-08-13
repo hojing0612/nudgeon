@@ -11,6 +11,17 @@ const REGION_PREFIX = {
   '충북': '43', '충남': '44', '전북': '52', '전남': '46', '경북': '47',
   '경남': '48', '제주': '50'
 };
+const REGION_NAMES = Object.keys(REGION_PREFIX);
+
+function searchableText(resource) {
+  return [resource.title, resource.summary, resource.details, resource.support_details, resource.organization_name]
+    .filter(Boolean).join(' ');
+}
+
+function regionsInText(resource) {
+  const text = searchableText(resource);
+  return REGION_NAMES.filter(region => text.includes(region));
+}
 
 function textIncludesAny(value, words) {
   const text = String(value || '').toLowerCase();
@@ -34,9 +45,13 @@ function eligibility(resource, profile) {
   const userRegion = String(profile.region || '');
   const regionPrefix = REGION_PREFIX[userRegion] || (/^\d{2,5}$/.test(userRegion) ? userRegion.slice(0, 2) : '');
   const regionCodes = (resource.region_codes || []).map(String).filter(Boolean);
-  const nationwide = !regionCodes.length || regionCodes.some(code => ['00', '0', '전국'].includes(code));
-  if (!nationwide && regionPrefix && !regionCodes.some(code => code.startsWith(regionPrefix))) reasons.push('거주 지역');
-  else if (!nationwide && !regionPrefix) missing.push('거주 지역');
+  const textRegions = regionsInText(resource);
+  const nationwide = regionCodes.some(code => ['00', '0', '전국'].includes(code));
+  const codeMatch = regionPrefix && regionCodes.some(code => code.startsWith(regionPrefix));
+  const textMatch = userRegion && textRegions.includes(userRegion);
+  if (!nationwide && regionPrefix && regionCodes.length && !codeMatch) reasons.push('거주 지역');
+  else if (!nationwide && userRegion && !regionCodes.length && textRegions.length && !textMatch) reasons.push('거주 지역');
+  else if (!nationwide && !regionCodes.length && !textRegions.length) missing.push('거주 지역');
 
   const education = String(profile.education || '');
   const employment = String(profile.employment || '');
@@ -73,6 +88,7 @@ function statusFromPeriod(resource) {
 
 function analyzedEligibility(resource, profile) {
   const ai = resource.ai_analysis;
+  if (eligibility(resource, profile).result === 'unlikely') return false;
   if (!ai || ai.confidence < .55) return basicEligibility(resource, profile);
   const sourceStatus = statusFromPeriod(resource);
   const applicationStatus = sourceStatus === 'unknown' ? ai.application_status : sourceStatus;
@@ -88,9 +104,17 @@ function analyzedEligibility(resource, profile) {
   return true;
 }
 
+function isActionable(resource) {
+  const ai = resource.ai_analysis || {};
+  const text = searchableText(resource);
+  if (ai.benefit_type === 'event') return false;
+  if (/기념행사|축제|정책 제안 행사|서포터즈|위원회 모집/.test(text)) return false;
+  return true;
+}
+
 function basicEligibility(resource, profile) {
   if (eligibility(resource, profile).result === 'unlikely') return false;
-  return ['open', 'always'].includes(statusFromPeriod(resource));
+  return isActionable(resource) && ['open', 'always'].includes(statusFromPeriod(resource));
 }
 
 const rankingSchema = {
@@ -125,6 +149,32 @@ async function personalizedOrder(candidates, profile) {
   }
 }
 
+async function fetchAllResources(url, key, query, maxRows = 10000) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const params = new URLSearchParams({
+      select: '*', status: 'eq.published', limit: String(pageSize), offset: String(offset),
+      order: 'verified_at.desc.nullslast,title.asc'
+    });
+    if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
+    const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
+    if (!response.ok) throw new Error(`Supabase ${response.status}: ${(await response.text()).slice(0, 500)}`);
+    const page = await response.json();
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return rows;
+}
+
+function countBy(rows, valueFor) {
+  return rows.reduce((counts, row) => {
+    const value = valueFor(row) || 'unknown';
+    counts[value] = (counts[value] || 0) + 1;
+    return counts;
+  }, {});
+}
+
 function supabaseHeaders(key) {
   const headers = { apikey: key };
   // Legacy anon keys are JWTs and can also be used as a Bearer token.
@@ -142,22 +192,23 @@ export default async function handler(req, res) {
   const showAll = !categories.length || categories.includes('all');
   const query = String(req.query.q || '').trim().slice(0, 80);
   const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
-  const params = new URLSearchParams({ select: '*', status: 'eq.published', limit: '1000', order: 'verified_at.desc.nullslast,title.asc' });
-  if (query) params.set('or', `(title.ilike.*${query.replace(/[,*()]/g, '')}*,summary.ilike.*${query.replace(/[,*()]/g, '')}*)`);
-  const response = await fetch(`${url}/rest/v1/resources?${params}`, { headers: supabaseHeaders(key) });
-  if (!response.ok) {
-    console.error('정책 DB 조회 실패:', response.status, (await response.text()).slice(0, 500));
+  let rows;
+  try {
+    rows = await fetchAllResources(url.replace(/\/$/, ''), key, query);
+  } catch (error) {
+    console.error('정책 DB 조회 실패:', error);
     return res.status(502).json({ error: '정책 DB 조회에 실패했어요' });
   }
-  const rows = await response.json();
   const profile = {
     age: req.query.age, ageMin: req.query.ageMin, ageMax: req.query.ageMax, region: req.query.region,
     education: req.query.education, employment: req.query.employment, income: req.query.income,
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
-  const candidates = rows
-    .filter(resource => showAll || categories.includes(categoryOf(resource)))
-    .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile))
+  const categoryMatches = rows.filter(resource => showAll || categories.includes(categoryOf(resource)));
+  const regionAndStatusMatches = categoryMatches
+    .filter(resource => isActionable(resource))
+    .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile));
+  const candidates = regionAndStatusMatches
     .slice(0, Math.min(limit, 100));
   const ranked = await personalizedOrder(candidates, profile);
   const items = ranked.map(resource => {
@@ -175,5 +226,15 @@ export default async function handler(req, res) {
       source: resource.source_key
     };
   });
-  return res.status(200).json({ total: items.length, resources: items, meta: { analyzed: rows.length, eligible: candidates.length } });
+  return res.status(200).json({
+    total: items.length,
+    resources: items,
+    meta: {
+      databaseRows: rows.length,
+      categoryMatches: categoryMatches.length,
+      eligible: candidates.length,
+      sources: countBy(rows, resource => resource.source_key),
+      categories: countBy(rows, categoryOf)
+    }
+  });
 }
