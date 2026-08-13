@@ -18,6 +18,32 @@ function searchableText(resource) {
     .filter(Boolean).join(' ');
 }
 
+function isGenericPortal(value) {
+  try {
+    const url = new URL(value);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    const generic = [
+      ['work24.go.kr', ['/','/cm/main.do']],
+      ['bokjiro.go.kr', ['/']],
+      ['myhome.go.kr', ['/']],
+      ['apply.lh.or.kr', ['/']]
+    ];
+    return generic.some(([host, paths]) => url.hostname.endsWith(host) && paths.includes(path));
+  } catch { return true; }
+}
+
+function directActionUrl(resource) {
+  for (const value of [resource.application_url, resource.reference_url]) {
+    if (value && !isGenericPortal(value)) return value;
+  }
+  return null;
+}
+
+function hasConcreteAction(resource) {
+  const method = String(resource.application_method || '').trim();
+  return Boolean(directActionUrl(resource) || resource.contact || (method.length >= 8 && !/홈페이지|온라인 신청|사이트 확인/.test(method)));
+}
+
 function regionsInText(resource) {
   const text = searchableText(resource);
   return REGION_NAMES.filter(region => text.includes(region));
@@ -123,6 +149,7 @@ function isActionable(resource) {
   // Institutions need a dedicated nearby-help UI with address/phone. A generic
   // organization homepage is not an actionable policy application.
   if (resource.kind === 'institution') return false;
+  if (!hasConcreteAction(resource)) return false;
   if (ai.benefit_type === 'event') return false;
   if (/기념행사|축제|정책 제안 행사|서포터즈|위원회 모집|포털.*운영|sns.*운영|채널 운영|정보.*통합 제공|공간 운영사업/.test(text.toLowerCase())) return false;
   return true;
@@ -143,29 +170,40 @@ function basicEligibility(resource, profile) {
 }
 
 const rankingSchema = {
-  type: 'object', additionalProperties: false, required: ['selected_ids'],
-  properties: { selected_ids: { type: 'array', items: { type: 'string' } } }
+  type: 'object', additionalProperties: false, required: ['selections'],
+  properties: { selections: { type: 'array', items: {
+    type: 'object', additionalProperties: false, required: ['id','priority','reason'],
+    properties: {
+      id:{type:'string'}, priority:{type:'string',enum:['top','high','standard']}, reason:{type:'string'}
+    }
+  } } }
 };
 
 async function personalizedOrder(candidates, profile) {
-  const fallback = [...candidates].sort((a, b) => (b.ai_analysis?.practical_value || 0) - (a.ai_analysis?.practical_value || 0));
+  const fallback = [...candidates]
+    .sort((a, b) => (b.ai_analysis?.practical_value || 0) - (a.ai_analysis?.practical_value || 0))
+    .map((item,index)=>({...item,_priority:index===0?'top':index<3?'high':'standard',_reason:''}));
   if (!candidates.length || !process.env.ANTHROPIC_API_KEY) return fallback;
   try {
     const result = await callClaudeTool({
       name: 'rank_recommendations',
-      description: '후보 중 사용자가 지금 실제로 신청·예약·지원받을 수 있고 요청 카테고리와 정확히 맞는 자료만 선별해 유용한 순서로 반환한다. 단순 기관·센터 소개, 홈페이지·포털·SNS 안내, 홍보·행사, 타 지역, 카테고리 오분류, 구체적 혜택이나 이용 방법이 없는 자료는 반환하지 않는다. 비슷한 센터나 동일 유형만 반복하지 말고 현금·치료비·바우처·직접 상담·훈련 등 서로 다른 실질 혜택을 우선한다. 모든 후보를 반환할 필요가 없다.',
+      description: '후보 중 사용자가 지금 실제로 신청·예약·지원받을 수 있고 요청 카테고리와 정확히 맞는 자료만 선별한다. 자가진단 신호에서 드러난 현재 어려움, 원하는 변화, 감당 가능한 행동 크기를 활용해 필요도와 실행 가능성을 함께 평가한다. 단순 기관·센터 소개, 홈페이지·포털·SNS 안내, 홍보·행사, 타 지역, 카테고리 오분류, 구체적 혜택이나 이용 방법이 없는 자료는 반환하지 않는다. 비슷한 지원만 반복하지 말고 현금·치료비·바우처·직접 상담·훈련 등 서로 다른 실질 혜택을 우선한다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정하고 나머지는 standard로 정한다. 모든 후보를 반환할 필요가 없다. reason은 내부 검증용 한 문장으로 작성한다.',
       schema: rankingSchema,
       input: {
         profile,
         candidates: candidates.map(resource => ({
           id: resource.id, title: resource.title, summary: resource.summary,
-          organization: resource.organization_name, analysis: resource.ai_analysis
+          organization: resource.organization_name, action_url:directActionUrl(resource),
+          application_method:resource.application_method, analysis: resource.ai_analysis
         }))
       },
       maxTokens: 1800
     });
     const byId = new Map(candidates.map(item => [item.id, item]));
-    return (result.selected_ids || []).map(id => byId.get(id)).filter(Boolean);
+    return (result.selections || []).map(selection => {
+      const item=byId.get(selection.id);
+      return item?{...item,_priority:selection.priority,_reason:selection.reason}:null;
+    }).filter(Boolean);
   } catch (error) {
     console.error('맞춤 추천 정렬 실패:', error);
     return fallback;
@@ -225,7 +263,11 @@ export default async function handler(req, res) {
   const profile = {
     age: req.query.age, ageMin: req.query.ageMin, ageMax: req.query.ageMax, region: req.query.region,
     education: req.query.education, employment: req.query.employment, income: req.query.income,
-    needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
+    housing:req.query.housing,
+    needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean),
+    journeyLevel:req.query.journeyLevel, journeyBarrier:req.query.journeyBarrier,
+    journeyVision:req.query.journeyVision, actionSize:req.query.actionSize,
+    assessmentSignals:String(req.query.signals||'').split('|').filter(Boolean).slice(0,40)
   };
   const categoryMatches = rows.filter(resource => matchesRequestedCategory(resource, categories, showAll));
   const nonActionable = categoryMatches.filter(resource => !isActionable(resource));
@@ -241,13 +283,13 @@ export default async function handler(req, res) {
       id: resource.id, title: resource.title, summary: resource.summary,
       support: resource.support_details, benefitSummary: resource.ai_analysis?.benefit_summary,
       organization: resource.organization_name,
-      category: categoryOf(resource), applicationUrl: resource.application_url,
+      category: categoryOf(resource), applicationUrl: directActionUrl(resource), contact:resource.contact,
       referenceUrl: resource.reference_url, applicationMethod: resource.application_method,
       requiredDocuments: resource.required_documents, applicationStatus: resource.application_status,
       alwaysOpen: resource.always_open, endsAt: resource.application_ends_at,
       periodText: resource.raw_data?.applicationPeriod || '',
       qualification: resource.details || '', eligibility: result,
-      source: resource.source_key
+      source: resource.source_key, priority:resource._priority||'standard'
     };
   });
   return res.status(200).json({
