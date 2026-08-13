@@ -90,6 +90,8 @@ function analyzedEligibility(resource, profile) {
   const ai = resource.ai_analysis;
   if (eligibility(resource, profile).result === 'unlikely') return false;
   if (!ai || ai.confidence < .55) return basicEligibility(resource, profile);
+  if (ai.recommended === false) return false;
+  if (Number(ai.practical_value) < 4) return false;
   const sourceStatus = statusFromPeriod(resource);
   const applicationStatus = sourceStatus === 'unknown' ? ai.application_status : sourceStatus;
   if (!['open', 'always'].includes(applicationStatus)) return false;
@@ -107,6 +109,9 @@ function analyzedEligibility(resource, profile) {
 function isActionable(resource) {
   const ai = resource.ai_analysis || {};
   const text = searchableText(resource);
+  // Institutions need a dedicated nearby-help UI with address/phone. A generic
+  // organization homepage is not an actionable policy application.
+  if (resource.kind === 'institution') return false;
   if (ai.benefit_type === 'event') return false;
   if (/기념행사|축제|정책 제안 행사|서포터즈|위원회 모집/.test(text)) return false;
   return true;
@@ -205,6 +210,7 @@ export default async function handler(req, res) {
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
   const categoryMatches = rows.filter(resource => showAll || categories.includes(categoryOf(resource)));
+  const nonActionable = categoryMatches.filter(resource => !isActionable(resource));
   const regionAndStatusMatches = categoryMatches
     .filter(resource => isActionable(resource))
     .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile));
@@ -232,6 +238,7 @@ export default async function handler(req, res) {
     meta: {
       databaseRows: rows.length,
       categoryMatches: categoryMatches.length,
+      nonActionable: nonActionable.length,
       eligible: candidates.length,
       sources: countBy(rows, resource => resource.source_key),
       categories: countBy(rows, categoryOf)
