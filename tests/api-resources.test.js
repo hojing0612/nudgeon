@@ -19,6 +19,7 @@ function resource(id, overrides = {}) {
     status: 'published',
     application_status: 'always',
     always_open: true,
+    application_url: `https://example.org/apply/${id}`,
     region_codes: ['41'],
     source_key: 'test-source',
     raw_data: { category: 'welfare', minAge: 19, maxAge: 34 },
@@ -127,6 +128,30 @@ test('상담 카테고리에서 타 지역·취업상담·포털 자료를 제�
     global.fetch = originalFetch;
     process.env.VITE_SUPABASE_URL = originalUrl;
     process.env.VITE_SUPABASE_ANON_KEY = originalKey;
-    process.env.ANTHROPIC_API_KEY = originalAnthropic;
+    if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+  }
+});
+
+test('메인 홈페이지뿐이거나 행동 경로가 없는 정책은 노출하지 않는다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  global.fetch = async () => ({ ok: true, json: async () => [
+    resource('main-only', { application_url: 'https://www.work24.go.kr/cm/main.do' }),
+    resource('no-action', { application_url: null, reference_url: null }),
+    resource('direct', { application_url: 'https://www.work24.go.kr/specific/application/123' }),
+    resource('phone', { application_url: null, contact: '031-123-4567' })
+  ] });
+  try {
+    const res = responseRecorder();
+    await handler({ method: 'GET', query: { category: 'all', age: '20', region: '경기' } }, res);
+    assert.deepEqual(res.body.resources.map(item => item.id).sort(), ['direct','phone']);
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
   }
 });
