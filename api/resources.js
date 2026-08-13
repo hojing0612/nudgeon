@@ -23,6 +23,14 @@ function regionsInText(resource) {
   return REGION_NAMES.filter(region => text.includes(region));
 }
 
+function inferredCategory(resource) {
+  const text = searchableText(resource).toLowerCase();
+  if (/주거|주택|월세|전세|임대|청약|보증금|lh|sh/.test(text)) return 'housing';
+  if (/정신건강|심리|마음건강|우울|불안|고립|은둔|외래치료비/.test(text)) return 'counseling';
+  if (/취업|구직|일자리|채용|면접|창업|직업훈련|국민취업지원/.test(text)) return 'career';
+  return null;
+}
+
 function textIncludesAny(value, words) {
   const text = String(value || '').toLowerCase();
   return words.some(word => text.includes(word));
@@ -49,7 +57,10 @@ function eligibility(resource, profile) {
   const nationwide = regionCodes.some(code => ['00', '0', '전국'].includes(code));
   const codeMatch = regionPrefix && regionCodes.some(code => code.startsWith(regionPrefix));
   const textMatch = userRegion && textRegions.includes(userRegion);
-  if (!nationwide && regionPrefix && regionCodes.length && !codeMatch) reasons.push('거주 지역');
+  // Explicit place names in the content override a conflicting/mis-normalized
+  // source code. This prevents a Daejeon/Gwangyang item tagged as Gyeonggi.
+  if (!nationwide && userRegion && textRegions.length && !textMatch) reasons.push('거주 지역');
+  else if (!nationwide && regionPrefix && regionCodes.length && !codeMatch) reasons.push('거주 지역');
   else if (!nationwide && userRegion && !regionCodes.length && textRegions.length && !textMatch) reasons.push('거주 지역');
   else if (!nationwide && !regionCodes.length && !textRegions.length) missing.push('거주 지역');
 
@@ -69,7 +80,7 @@ function eligibility(resource, profile) {
 }
 
 function categoryOf(resource) {
-  return resource.ai_analysis?.category || resource.raw_data?.category || 'welfare';
+  return inferredCategory(resource) || resource.ai_analysis?.category || resource.raw_data?.category || 'welfare';
 }
 
 function statusFromPeriod(resource) {
@@ -113,7 +124,16 @@ function isActionable(resource) {
   // organization homepage is not an actionable policy application.
   if (resource.kind === 'institution') return false;
   if (ai.benefit_type === 'event') return false;
-  if (/기념행사|축제|정책 제안 행사|서포터즈|위원회 모집/.test(text)) return false;
+  if (/기념행사|축제|정책 제안 행사|서포터즈|위원회 모집|포털.*운영|sns.*운영|채널 운영|정보.*통합 제공|공간 운영사업/.test(text.toLowerCase())) return false;
+  return true;
+}
+
+function matchesRequestedCategory(resource, categories, showAll) {
+  if (showAll) return true;
+  const category = categoryOf(resource);
+  if (!categories.includes(category)) return false;
+  const text = searchableText(resource);
+  if (category === 'counseling' && /취업|구직|일자리|채용|면접|창업/.test(text) && !/정신건강|심리|마음건강|우울|불안|고립|은둔/.test(text)) return false;
   return true;
 }
 
@@ -123,8 +143,8 @@ function basicEligibility(resource, profile) {
 }
 
 const rankingSchema = {
-  type: 'object', additionalProperties: false, required: ['recommended_ids'],
-  properties: { recommended_ids: { type: 'array', items: { type: 'string' } } }
+  type: 'object', additionalProperties: false, required: ['selected_ids'],
+  properties: { selected_ids: { type: 'array', items: { type: 'string' } } }
 };
 
 async function personalizedOrder(candidates, profile) {
@@ -133,7 +153,7 @@ async function personalizedOrder(candidates, profile) {
   try {
     const result = await callClaudeTool({
       name: 'rank_recommendations',
-      description: '이미 필수 자격 조건을 통과한 정책만 사용자의 필요와 희망 직무에 맞춰 유용한 순서로 정렬한다. 모든 후보 ID를 중복 없이 반환한다.',
+      description: '후보 중 사용자가 지금 실제로 신청·예약·지원받을 수 있고 요청 카테고리와 정확히 맞는 자료만 선별해 유용한 순서로 반환한다. 단순 기관·센터 소개, 홈페이지·포털·SNS 안내, 홍보·행사, 타 지역, 카테고리 오분류, 구체적 혜택이나 이용 방법이 없는 자료는 반환하지 않는다. 비슷한 센터나 동일 유형만 반복하지 말고 현금·치료비·바우처·직접 상담·훈련 등 서로 다른 실질 혜택을 우선한다. 모든 후보를 반환할 필요가 없다.',
       schema: rankingSchema,
       input: {
         profile,
@@ -145,9 +165,7 @@ async function personalizedOrder(candidates, profile) {
       maxTokens: 1800
     });
     const byId = new Map(candidates.map(item => [item.id, item]));
-    const ordered = result.recommended_ids.map(id => byId.get(id)).filter(Boolean);
-    const seen = new Set(ordered.map(item => item.id));
-    return [...ordered, ...fallback.filter(item => !seen.has(item.id))];
+    return (result.selected_ids || []).map(id => byId.get(id)).filter(Boolean);
   } catch (error) {
     console.error('맞춤 추천 정렬 실패:', error);
     return fallback;
@@ -209,7 +227,7 @@ export default async function handler(req, res) {
     education: req.query.education, employment: req.query.employment, income: req.query.income,
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean)
   };
-  const categoryMatches = rows.filter(resource => showAll || categories.includes(categoryOf(resource)));
+  const categoryMatches = rows.filter(resource => matchesRequestedCategory(resource, categories, showAll));
   const nonActionable = categoryMatches.filter(resource => !isActionable(resource));
   const regionAndStatusMatches = categoryMatches
     .filter(resource => isActionable(resource))
