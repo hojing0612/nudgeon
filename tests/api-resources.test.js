@@ -81,3 +81,52 @@ test('Supabase 1000행 제한 뒤의 데이터도 페이지를 넘겨 읽는다'
     process.env.VITE_SUPABASE_ANON_KEY = originalKey;
   }
 });
+
+test('AI가 비추천한 자료와 일반 센터 홈페이지를 정책 추천에서 제외한다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  global.fetch = async () => ({ ok: true, json: async () => [
+    resource('useful', { ai_analysis: { confidence: .9, recommended: true, practical_value: 8, category: 'welfare', application_status: 'always', nationwide: true } }),
+    resource('rejected', { ai_analysis: { confidence: .9, recommended: false, practical_value: 2, category: 'welfare', application_status: 'always', nationwide: true } }),
+    resource('center', { kind: 'institution', application_url: 'https://www.work24.go.kr/cm/main.do' })
+  ] });
+  try {
+    const res = responseRecorder();
+    await handler({ method: 'GET', query: { category: 'all', age: '21', region: '경기' } }, res);
+    assert.deepEqual(res.body.resources.map(item => item.id), ['useful']);
+    assert.equal(res.body.meta.nonActionable, 1);
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
+  }
+});
+
+test('상담 카테고리에서 타 지역·취업상담·포털 자료를 제외한다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  delete process.env.ANTHROPIC_API_KEY;
+  global.fetch = async () => ({ ok: true, json: async () => [
+    resource('therapy', { title: '경기도 청년 심리상담 바우처', summary: '전문 심리상담 8회 지원', raw_data: { category: 'counseling', minAge: 19, maxAge: 34 } }),
+    resource('daejeon', { title: '대전 청년 심리상담', summary: '대전광역시 거주자 지원', region_codes: ['41'], raw_data: { category: 'counseling' } }),
+    resource('job-center', { title: '청년 일자리센터 취업상담', raw_data: { category: 'counseling' } }),
+    resource('portal', { title: '청년정책 포털 운영', raw_data: { category: 'counseling' } })
+  ] });
+  try {
+    const res = responseRecorder();
+    await handler({ method: 'GET', query: { category: 'counseling', age: '20', region: '경기' } }, res);
+    assert.deepEqual(res.body.resources.map(item => item.id), ['therapy']);
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
+    process.env.ANTHROPIC_API_KEY = originalAnthropic;
+  }
+});
