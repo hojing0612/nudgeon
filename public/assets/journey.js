@@ -308,6 +308,14 @@ function profileEvidence(a, group){
   }).filter(Boolean).slice(0,4);
 }
 
+function assessmentSignals(a){
+  return Object.entries(a).map(([key,value])=>{
+    const q=ALL_QUESTIONS.find(item=>item.key===key);
+    const label=answerLabel(key,value);
+    return q&&label?`${q.domain||'현재 상태'}: ${label}`:'';
+  }).filter(Boolean).slice(0,40);
+}
+
 function actionSizeFor(level){
   if(level<=2) return '준비만 해도 끝나는 1–3분 행동';
   if(level===3) return '집 안이나 집 앞에서 끝나는 짧은 행동';
@@ -623,6 +631,9 @@ function renderInner(){
       needs:needsByVision[state.profile?.vision]||[],
       journeyLevel:state.profile?.level||null,
       journeyBarrier:state.profile?.barrier||null,
+      journeyVision:state.profile?.vision||null,
+      actionSize:state.profile?.actionSize||null,
+      assessmentSignals:assessmentSignals(state.answers),
       ageMin:ageBand?.[0]??null,
       ageMax:ageBand?.[1]??null,
       region:regionValues[regionValue]||''
