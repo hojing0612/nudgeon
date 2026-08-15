@@ -622,7 +622,7 @@ function renderInner(){
   document.getElementById('appShell')?.setAttribute('data-screen', state.screen);
   const fn = {intro:vIntro, resume:vResume, check:vCheck, bridge:vBridge, report:vReport, micro:vMicro,
               rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
-  stage.innerHTML = `${backButton()}${fn()}`;
+  stage.innerHTML = fn();
   bind();
   if(state.screen==='connect'){
     const needsByVision={work:['career'],study:['education'],social:['community'],unsure:[]};
@@ -638,11 +638,6 @@ function renderInner(){
   }
   persistProgress();
   stage.querySelector('h1,h2')?.focus?.();
-}
-
-function backButton(){
-  if(state.screen==='intro' || state.screen==='resume' || state.screen==='check') return '';
-  return `<button class="back-step" data-prev-step="1" aria-label="이전 단계로 돌아가기">← 이전 단계</button>`;
 }
 
 function renderRail(){
