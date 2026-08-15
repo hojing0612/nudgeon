@@ -728,7 +728,7 @@ function App() {
   const nextSteps = scenario ? NEXT_STEPS[scenario.id] || (scenario.id.startsWith('resource:') ? NEXT_STEPS.apply : []) : [];
 
   return (
-    <div className="app">
+    <div className="app" data-mobile-view={!scenario ? 'scenario' : (isSpeaking || isUserTurn ? 'live' : phase)}>
       <header className="site-header">
         <a className="brand" href="/home.html">nudge.on</a>
         <nav className="journey" aria-label="NudgeOn 여정 단계">
@@ -738,8 +738,13 @@ function App() {
           <button className="jstep" data-state="todo" onClick={() => moveToJourneyStep('connect')}><span className="num">04</span><span>공공 복지 연결</span></button>
           <button className="jstep" data-state="todo" onClick={() => moveToJourneyStep('record')}><span className="num">05</span><span>기록·성장</span></button>
         </nav>
-        <a className="home-link" href="/home.html">처음으로</a>
+        <a className="home-link" href="/home.html">{isSpeaking || isUserTurn ? '안전하게 나가기' : '처음으로'}</a>
       </header>
+
+      <div className="mobile-journey-progress" aria-live="polite">
+        <b>3 / 5 · 사회적 리허설{isSpeaking || isUserTurn ? ' 진행 중' : ''}</b>
+        <div>{[0, 1, 2, 3, 4].map((step) => <i key={step} className={step <= 2 ? 'active' : ''} />)}</div>
+      </div>
 
       <div className="workspace">
         <aside className="rail" aria-label="현재 단계 창문">
@@ -772,13 +777,12 @@ function App() {
           {!scenario && (
             <>
               <div className="eyebrow">03 — Social Rehearsal</div>
-              <h2 className="mid" tabIndex={-1}>실전 말고, 먼저 여기서 한 번</h2>
-              <p className="lede">틀려도 아무 일도 일어나지 않는 자리에서 먼저 해봐요.
-              AI가 상대 역할을 맡고, 옆에서 짧게 코칭해줄게요. 그만두고 싶으면 그냥 나가면 돼요.</p>
+              <h2 className="mid" tabIndex={-1}>어떤 상황을 먼저 연습해볼까요?</h2>
+              <p className="lede">AI가 상대 역할을 맡고, 필요할 때 짧은 문장 도움을 제안해요. 원하는 상황 하나를 선택해 주세요.</p>
               <div className="scenario-grid">
-                {SCENARIOS.map((s) => (
+                {SCENARIOS.map((s, index) => (
                   <button key={s.id} className="scenario-card-btn" onClick={() => selectScenario(s)} aria-label={s.title}>
-                    <span className="sc-icon"><Mic size={18} /></span>
+                    <span className="sc-icon"><span className="mobile-scenario-number">{String(index + 1).padStart(2, '0')}</span><Mic className="desktop-scenario-icon" size={18} /></span>
                     <span>
                       <span className="sc-title">{s.title}</span>
                       <span className="sc-desc">{s.who}</span>
@@ -845,8 +849,9 @@ function App() {
 
           {scenario && (isSpeaking || isUserTurn) && (
             <>
-              <div className="eyebrow">03 — {scenario.title}</div>
+              <div className="eyebrow">STEP 03 · 진행 중</div>
               <h2 className="mid" tabIndex={-1}>{scenario.title}</h2>
+              <p className="mobile-live-lede">AI 상대와 음성 또는 텍스트로 연습해보세요. 필요하면 언제든 문장 도움을 사용할 수 있어요.</p>
 
               <div className="rehearsal-layout">
                 <div>

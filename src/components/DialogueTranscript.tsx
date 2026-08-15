@@ -19,6 +19,7 @@ export function DialogueTranscript({ messages, busy, portrait, opponentName }: P
 
   return (
     <div className="chat-panel">
+      <div className="chat-title-row"><h3>대화 기록</h3><span>✓ 자동 임시저장</span></div>
       <div className="chat" ref={scrollRef}>
         {messages.map((m, i) => {
           if (m.role === 'coach') {
