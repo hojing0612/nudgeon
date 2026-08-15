@@ -669,6 +669,11 @@ function renderRail(){
     record:'길과 다리가 이어진 밝은 풍경이 펼쳐집니다'
   };
   document.getElementById('windowNote').textContent = screenNotes[windowScreen] || '커튼은 아직 닫혀 있어요';
+  const mobileProgress=document.getElementById('mobileJourneyProgress');
+  if(mobileProgress){
+    const progressIndex=Math.max(0,windowIndex);
+    mobileProgress.innerHTML=`<b>${progressIndex+1} / 5 · ${SCREEN_NAMES[progressIndex]||'자가진단'}</b><div>${SCREENS.map((_,i)=>`<i class="${i<=progressIndex?'active':''}"></i>`).join('')}</div>`;
+  }
 }
 
 /* ── 00 시작 ── */
@@ -683,14 +688,15 @@ function vIntro(){
   <section class="home-path" id="journeyIntro">
     <div class="home-section-head"><div><span>HOW NUDGEON WORKS</span><h2>작은 행동으로 이어지는<br>5단계 과정</h2></div><p>현재 상태를 확인하고, 오늘 할 수 있는 행동부터 시작합니다. 모든 단계는 이전으로 돌아가거나 잠시 멈출 수 있어요.</p></div>
     <ol>
-      <li><b>01</b><div><strong>지금 상태 확인하기</strong><span>질문으로 생활 리듬과 현재 부담을 가볍게 확인합니다.</span></div></li>
-      <li><b>02</b><div><strong>작은 행동 고르기</strong><span>지금 할 수 있는 마이크로스텝을 고르고 크기를 조정합니다.</span></div></li>
-      <li><b>03</b><div><strong>대화 미리 연습하기</strong><span>실제 상황 전에 필요한 말을 적어보고 부담 없이 연습합니다.</span></div></li>
-      <li><b>04</b><div><strong>지원 정보 찾아보기</strong><span>지역과 필요에 맞춰 이용 가능한 지원 정보를 확인합니다.</span></div></li>
-      <li><b>05</b><div><strong>기록 확인하기</strong><span>완료한 행동과 변화를 기록하고 다음 단계를 선택합니다.</span></div></li>
+      <li><b>01</b><div><strong>지금 상태 확인하기</strong><span>5개의 질문으로 생활 리듬과 현재 부담을 확인합니다.</span></div></li>
+      <li><b>02</b><div><strong>작은 행동 고르기</strong><span>지금 바로 할 수 있는 마이크로스텝을 선택합니다.</span></div></li>
+      <li><b>03</b><div><strong>대화 미리 연습하기</strong><span>실제 상황 전에 필요한 말을 부담 없이 연습합니다.</span></div></li>
+      <li><b>04</b><div><strong>지원 정보 찾아보기</strong><span>지역과 필요에 맞는 지원 정보를 확인합니다.</span></div></li>
+      <li><b>05</b><div><strong>기록 확인하기</strong><span>완료한 행동과 다음 단계를 이어서 정합니다.</span></div></li>
     </ol>
   </section>
-  <section class="home-explain"><div class="home-mini-window" aria-hidden="true"><span></span><i></i></div><div><span>ONE STEP AT A TIME</span><h2>창문이 열리듯,<br>가능한 만큼만 시작합니다</h2><p>NudgeOn은 현재 상태 확인부터 작은 행동, 대화 연습과 지원 정보 탐색까지 한 흐름으로 연결합니다. 빠른 변화를 요구하지 않고 사용자가 정한 속도를 존중합니다.</p><button class="btn ghost" data-go="check">5단계 살펴보기</button></div></section>`;
+  <section class="home-explain"><div class="home-mini-window" aria-hidden="true"><span></span><i></i></div><div><span>ONE STEP AT A TIME</span><h2>창문이 열리듯,<br>가능한 만큼만 시작합니다</h2><p>빠른 변화를 요구하지 않고 사용자가 정한 속도를 존중합니다. 작은 행동부터 대화 연습과 지원 정보까지 한 흐름으로 연결해요.</p><button class="btn ghost" data-go="check">5단계 살펴보기</button></div></section>
+  <footer class="home-footer"><b>nudge.on</b><p>오늘 할 수 있는 작은 행동을 찾고, 필요할 때 다시 이어갈 수 있도록 돕습니다.</p><nav>이용 방법 <span>·</span> 자주 묻는 질문 <span>·</span> 지원 정보</nav><small>© 2026 NudgeOn. All rights reserved.</small></footer>`;
 }
 
 function vResume(){
@@ -751,10 +757,13 @@ function vCheck(){
   <div class="eyebrow">01 — Self Check</div>
   <div class="qcount">${head}</div>
   <div class="bar"><i style="width:${(pos-1)/total*100}%"></i></div>
-  <h2 class="mid" tabindex="-1">${Q.q}</h2>
-  <div class="opts">
-    ${Q.opts.map(([label,val])=>`
-      <button class="opt" data-ans="${val}" aria-pressed="${state.answers[Q.key]===val}">${label}</button>`).join('')}
+  <div class="step-mobile-heading"><div class="eyebrow">STEP 01 · 자가진단</div><h2>지금 상태를 가볍게<br>확인해볼게요</h2><p>정답은 없어요. 지금의 나와 가장 가까운 답을 선택해 주세요. 질문 ${pos}/${total}</p></div>
+  <div class="question-card">
+    <h2 class="mid question-title" tabindex="-1">${Q.q}</h2>
+    <div class="opts">
+      ${Q.opts.map(([label,val])=>`
+        <button class="opt" data-ans="${val}" aria-pressed="${state.answers[Q.key]===val}">${label}</button>`).join('')}
+    </div>
   </div>
   <div class="row">
     <button class="btn quiet" data-back="1">이전</button>
@@ -802,9 +811,8 @@ function vMicro(){
   const list = state.micro.length ? state.micro : FALLBACK_STEPS[state.profile.barrier].map((t,i)=>({text:t,why:'',done:false}));
   return `
   <div class="eyebrow">02 — Micro Steps</div>
-  <h2 class="mid" tabindex="-1">오늘은 이 중 하나만 해도 충분해요</h2>
-  <p class="lede">전부 할 필요 없어요. 첫 번째가 오늘의 한 걸음이고, 나머지는 그냥 참고예요.
-  부담되면 더 작게, 너무 쉬우면 한 단계 높여서 나에게 맞는 크기를 찾을 수 있어요.</p>
+  <h2 class="mid" tabindex="-1">지금 할 수 있는 작은 행동을<br>골라보세요</h2>
+  <p class="lede">마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
       <div class="step-item ${s.done?'done':''}">
@@ -941,7 +949,8 @@ function vRecord(){
   ].filter(Boolean));
   return `
   <div class="eyebrow">05 — Record</div>
-  <h2 class="mid" tabindex="-1">기록·성장</h2>
+  <h2 class="mid" tabindex="-1">지금까지의 기록을<br>확인해보세요</h2>
+  <p class="lede">완료한 단계와 선택한 행동을 한눈에 보고, 다음에 이어갈 곳을 정할 수 있어요.</p>
   <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
   <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
