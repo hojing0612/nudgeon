@@ -60,12 +60,12 @@ export default async function handler(req, res) {
   if (!['GET','POST'].includes(req.method)) return res.status(405).json({ error:'GET 또는 POST 요청만 받아요' });
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error:'분석 권한이 없어요' });
   try {
-    const stale = encodeURIComponent(`(ai_analysis.is.null,ai_analysis->>analysis_version.is.null,ai_analysis->>analysis_version.neq.${ANALYSIS_VERSION})`);
-    let rows = await db(`resources?select=id,title,summary,details,support_details,required_documents,organization_name,application_url,reference_url,application_method,application_status,always_open,region_codes,raw_data&status=eq.published&or=${stale}&limit=20&order=verified_at.desc.nullslast`);
-    let mode = 'base';
+    let rows = await db(`resources?select=id,title,summary,details,support_details,required_documents,organization_name,application_url,reference_url,application_method,application_status,always_open,region_codes,raw_data&status=eq.published&ai_analysis->>recommended=eq.true&ai_analysis->>presentation_version=is.null&limit=20&order=verified_at.desc.nullslast`);
+    let mode = 'presentation';
     if (!rows.length) {
-      rows = await db(`resources?select=id,title,summary,details,support_details,required_documents,organization_name,application_url,reference_url,application_method,application_status,always_open,region_codes,raw_data&status=eq.published&ai_analysis->>recommended=eq.true&ai_analysis->>presentation_version=is.null&limit=20&order=verified_at.desc.nullslast`);
-      mode = 'presentation';
+      const stale = encodeURIComponent(`(ai_analysis.is.null,ai_analysis->>analysis_version.is.null,ai_analysis->>analysis_version.neq.${ANALYSIS_VERSION})`);
+      rows = await db(`resources?select=id,title,summary,details,support_details,required_documents,organization_name,application_url,reference_url,application_method,application_status,always_open,region_codes,raw_data&status=eq.published&or=${stale}&limit=20&order=verified_at.desc.nullslast`);
+      mode = 'base';
     }
     if (!rows.length) return res.status(200).json({ success:true, analyzed:0, remaining:false });
     let analyses;
