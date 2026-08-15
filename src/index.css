@@ -372,3 +372,55 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   .workspace .col { width: 100%; }
   .rehearsal-layout { grid-template-columns: 1fr; }
 }
+
+/* Figma mobile frames 75:10–75:11 */
+@media (max-width: 767px) {
+  body { background: #fff; font-size: 14px; }
+  .site-header { position: sticky; top: 0; height: auto; min-height: 60px; padding: 0 20px; align-items: center; gap: 0; background: #fff; border-bottom: 1px solid var(--line); }
+  .site-header .brand { font-size: 18px; }
+  .site-header nav { order: 3; width: 100%; padding: 0 0 16px; }
+  .site-header .journey { position: static; transform: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; }
+  .site-header .jstep { display: block; width: 100%; height: 6px; padding: 0; border-radius: 3px; background: var(--line); overflow: hidden; font-size: 0; }
+  .site-header .jstep .num, .site-header .jstep > span:last-child { display: none; }
+  .site-header .jstep[data-state="done"], .site-header .jstep[data-state="now"] { background: var(--sage); }
+  .home-link { margin-left: auto; padding: 8px 0; font-size: 13px; }
+  .workspace { display: block; width: 100%; padding: 0; background: #fff; }
+  .workspace .rail { position: static; height: auto; padding: 20px 20px 0; border: 0; background: #fff; }
+  .window-wrap { display: block; width: 104px; height: 156px; margin: 0 auto; }
+  .window-illustration, .rehearsal-window { width: 104px; height: 126px; transform: none; }
+  .window-glow, .rehearsal-window .window-glow { display: block; left: -2px; top: -6px; width: 108px; height: 132px; }
+  .window-frame { left: 8px; top: 4px; transform: scale(.4); transform-origin: top left; }
+  .workspace .window-note, .rehearsal-window .window-note { position: static; width: 180px; margin: 4px 0 0 50%; transform: translateX(-50%); text-align: center; font-size: 11px; white-space: nowrap; }
+  .workspace .stage { padding: 20px 20px 30px; background: #fff; }
+  .workspace .col { width: 100%; }
+  .back-home { margin-bottom: 16px; }
+  .eyebrow { margin-bottom: 6px; font-size: 14px; }
+  h2.mid { font-size: 25px; line-height: 1.45; }
+  p.lede { margin-bottom: 22px; font-size: 13px; line-height: 1.65; }
+  .scenario-grid { gap: 10px; margin-top: 18px; }
+  .scenario-card-btn { min-height: 82px; padding: 14px; border-radius: 16px; }
+  .scenario-card-btn .sc-icon { width: 44px; height: 44px; }
+  .scenario-card-btn .sc-title { font-size: 15px; }
+  .rehearsal-layout { grid-template-columns: 1fr; gap: 16px; margin-top: 18px; }
+  .opponent-card, .camera-card, .chat, .help-panel { border-radius: 18px; box-shadow: none; }
+  .opponent-portrait-wrap { height: 220px; }
+  .camera-card { padding: 14px; }
+  .camera-stage { height: 190px; border-radius: 14px; }
+  .live-meters { width: 126px; right: 10px; top: 22px; }
+  .chat { height: 330px; padding: 14px; }
+  .msg { max-width: 92%; padding: 10px 12px; font-size: 13px; }
+  .help-row { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .help-btn { min-height: 44px; padding: 9px 8px; justify-content: center; font-size: 11px; }
+  .composer textarea { min-width: 0; font-size: 13px; }
+  .composer .btn { width: 44px; height: 44px; padding: 0; border-radius: 12px; }
+  .card { padding: 18px 16px; border-radius: 18px; box-shadow: none; }
+  .row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .row .btn { width: 100%; min-height: 48px; }
+  .burden-buttons { grid-template-columns: repeat(5, 1fr); }
+  .burden-btn { padding: 10px 4px; }
+  .burden-label { display: none; }
+  .result-grid { grid-template-columns: 1fr; }
+  .result-burden { grid-column: auto; }
+  .next-step-btn { align-items: flex-start; padding: 14px; }
+  .next-step-btn .ns-label { flex-shrink: 1; }
+}
