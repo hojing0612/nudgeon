@@ -34,6 +34,9 @@ button { cursor: pointer; border: 0; font: inherit; }
 a { font: inherit; }
 
 .app { display: grid; grid-template-columns: 296px 1fr; min-height: 100vh; }
+.mobile-journey-progress { display: none; }
+.mobile-scenario-number { display: none; }
+.mobile-live-lede, .chat-title-row { display: none; }
 .rail { background: var(--surface); border-right: 1px solid var(--line); padding: 30px 26px; display: flex; flex-direction: column; gap: 26px; position: sticky; top: 0; height: 100vh; }
 .brand { font-family: 'Gothic A1', sans-serif; font-size: 25px; letter-spacing: -.01em; }
 .brand .dot { color: var(--amber); }
@@ -378,19 +381,20 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   body { background: #fff; font-size: 14px; }
   .site-header { position: sticky; top: 0; height: auto; min-height: 60px; padding: 0 20px; align-items: center; gap: 0; background: #fff; border-bottom: 1px solid var(--line); }
   .site-header .brand { font-size: 18px; }
-  .site-header nav { order: 3; width: 100%; padding: 0 0 16px; }
-  .site-header .journey { position: static; transform: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; width: 100%; }
-  .site-header .jstep { display: block; width: 100%; height: 6px; padding: 0; border-radius: 3px; background: var(--line); overflow: hidden; font-size: 0; }
-  .site-header .jstep .num, .site-header .jstep > span:last-child { display: none; }
-  .site-header .jstep[data-state="done"], .site-header .jstep[data-state="now"] { background: var(--sage); }
+  .site-header nav { display: none; }
   .home-link { margin-left: auto; padding: 8px 0; font-size: 13px; }
+  .mobile-journey-progress { display: flex; flex-direction: column; gap: 8px; padding: 14px 20px 16px; background: #fff; }
+  .mobile-journey-progress b { color: var(--amber); font-size: 13px; line-height: 1.45; }
+  .mobile-journey-progress > div { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .mobile-journey-progress i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
+  .mobile-journey-progress i.active { background: var(--sage); }
   .workspace { display: block; width: 100%; padding: 0; background: #fff; }
   .workspace .rail { position: static; height: auto; padding: 20px 20px 0; border: 0; background: #fff; }
   .window-wrap { display: block; width: 104px; height: 156px; margin: 0 auto; }
   .window-illustration, .rehearsal-window { width: 104px; height: 126px; transform: none; }
   .window-glow, .rehearsal-window .window-glow { display: block; left: -2px; top: -6px; width: 108px; height: 132px; }
   .window-frame { left: 8px; top: 4px; transform: scale(.4); transform-origin: top left; }
-  .workspace .window-note, .rehearsal-window .window-note { position: static; width: 180px; margin: 4px 0 0 50%; transform: translateX(-50%); text-align: center; font-size: 11px; white-space: nowrap; }
+  .workspace .window-note, .rehearsal-window .window-note { display: none; }
   .workspace .stage { padding: 20px 20px 30px; background: #fff; }
   .workspace .col { width: 100%; }
   .back-home { margin-bottom: 16px; }
@@ -400,6 +404,8 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   .scenario-grid { gap: 10px; margin-top: 18px; }
   .scenario-card-btn { min-height: 82px; padding: 14px; border-radius: 16px; }
   .scenario-card-btn .sc-icon { width: 44px; height: 44px; }
+  .mobile-scenario-number { display: inline; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 700; }
+  .desktop-scenario-icon { display: none; }
   .scenario-card-btn .sc-title { font-size: 15px; }
   .rehearsal-layout { grid-template-columns: 1fr; gap: 16px; margin-top: 18px; }
   .opponent-card, .camera-card, .chat, .help-panel { border-radius: 18px; box-shadow: none; }
@@ -408,6 +414,11 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   .camera-stage { height: 190px; border-radius: 14px; }
   .live-meters { width: 126px; right: 10px; top: 22px; }
   .chat { height: 330px; padding: 14px; }
+  .chat-panel { padding: 16px 14px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+  .chat-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .chat-title-row h3 { margin: 0; font-size: 18px; }
+  .chat-title-row span { color: var(--sage-deep); font-size: 10px; font-weight: 700; }
+  .chat-panel .chat { height: auto; min-height: 190px; padding: 0; border: 0; }
   .msg { max-width: 92%; padding: 10px 12px; font-size: 13px; }
   .help-row { grid-template-columns: 1fr 1fr; gap: 8px; }
   .help-btn { min-height: 44px; padding: 9px 8px; justify-content: center; font-size: 11px; }
@@ -423,4 +434,8 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   .result-burden { grid-column: auto; }
   .next-step-btn { align-items: flex-start; padding: 14px; }
   .next-step-btn .ns-label { flex-shrink: 1; }
+  .app[data-mobile-view="live"] .workspace .rail { display: none; }
+  .app[data-mobile-view="live"] .workspace .stage { padding-top: 20px; }
+  .app[data-mobile-view="live"] .back-home { display: none; }
+  .mobile-live-lede { display: block; margin: -2px 0 18px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
 }
