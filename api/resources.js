@@ -110,17 +110,59 @@ function categoryOf(resource) {
 }
 
 function statusFromPeriod(resource) {
-  if (resource.always_open || resource.application_status === 'always') return 'always';
-  if (['open', 'upcoming', 'closed'].includes(resource.application_status)) return resource.application_status;
   const text = String(resource.raw_data?.applicationPeriod || '');
-  if (/상시|수시/.test(text)) return 'always';
-  const dates = [...text.matchAll(/(20\d{2})[.\-/년]?\s*(\d{1,2})[.\-/월]?\s*(\d{1,2})/g)]
-    .map(([, y, m, d]) => new Date(Number(y), Number(m) - 1, Number(d), 23, 59, 59))
-    .filter(date => !Number.isNaN(date.getTime()));
-  if (dates.length < 2) return 'unknown';
-  const now = new Date();
-  if (now < dates[0]) return 'upcoming';
-  return now <= dates[dates.length - 1] ? 'open' : 'closed';
+  const dates = periodDates(resource);
+  if (dates.start || dates.end) {
+    const now = new Date();
+    if (dates.start && now < dates.start) return 'upcoming';
+    if (dates.end && now > dates.end) return 'closed';
+    return 'open';
+  }
+  if (/상시|수시|연중/.test(text) || resource.always_open || resource.application_status === 'always') return 'always';
+  if (['open', 'upcoming', 'closed'].includes(resource.application_status)) return resource.application_status;
+  return 'unknown';
+}
+
+function dateFrom(value, endOfDay = false) {
+  if (!value) return null;
+  const match = String(value).match(/(20\d{2})\D*?(\d{1,2})\D*?(\d{1,2})/);
+  if (!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const date = new Date(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function periodDates(resource) {
+  const text = String(resource.raw_data?.applicationPeriod || '');
+  const parsed = [...text.matchAll(/(20\d{2})\D*?(\d{1,2})\D*?(\d{1,2})/g)]
+    .map(([, y, m, d]) => `${y}-${m}-${d}`);
+  return {
+    start: dateFrom(resource.application_starts_at || parsed[0]),
+    end: dateFrom(resource.application_ends_at || parsed[1] || (parsed.length === 1 ? parsed[0] : null), true)
+  };
+}
+
+function isoDate(date) {
+  if (!date) return null;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function koreanDate(date) {
+  return date ? `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일` : '';
+}
+
+function periodInfo(resource) {
+  const dates = periodDates(resource);
+  const status = statusFromPeriod(resource);
+  const label = status === 'always' ? '상시 모집'
+    : dates.start && dates.end ? `${koreanDate(dates.start)} ~ ${koreanDate(dates.end)}`
+    : dates.end ? `${koreanDate(dates.end)} 마감`
+    : dates.start ? `${koreanDate(dates.start)}부터` : '';
+  return { status, startsAt: isoDate(dates.start), endsAt: isoDate(dates.end), label };
 }
 
 function analyzedEligibility(resource, profile) {
@@ -270,24 +312,25 @@ export default async function handler(req, res) {
     assessmentSignals:String(req.query.signals||'').split('|').filter(Boolean).slice(0,40)
   };
   const categoryMatches = rows.filter(resource => matchesRequestedCategory(resource, categories, showAll));
-  const nonActionable = categoryMatches.filter(resource => !isActionable(resource));
-  const regionAndStatusMatches = categoryMatches
-    .filter(resource => isActionable(resource))
-    .filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile));
-  const candidates = regionAndStatusMatches
+  const actionableMatches = categoryMatches.filter(isActionable);
+  const profileMatches = actionableMatches.filter(resource => eligibility(resource, profile).result !== 'unlikely');
+  const openMatches = profileMatches.filter(resource => ['open','always'].includes(statusFromPeriod(resource)));
+  const analyzedMatches = openMatches.filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile));
+  const candidates = analyzedMatches
     .slice(0, Math.min(limit, 100));
   const ranked = await personalizedOrder(candidates, profile);
   const items = ranked.map(resource => {
     const result = eligibility(resource, profile);
+    const period = periodInfo(resource);
     return {
       id: resource.id, title: resource.title, summary: resource.summary,
       support: resource.support_details, benefitSummary: resource.ai_analysis?.benefit_summary,
       organization: resource.organization_name,
       category: categoryOf(resource), applicationUrl: directActionUrl(resource), contact:resource.contact,
       referenceUrl: resource.reference_url, applicationMethod: resource.application_method,
-      requiredDocuments: resource.required_documents, applicationStatus: resource.application_status,
-      alwaysOpen: resource.always_open, endsAt: resource.application_ends_at,
-      periodText: resource.raw_data?.applicationPeriod || '',
+      requiredDocuments: resource.required_documents, applicationStatus: period.status,
+      alwaysOpen: period.status === 'always', startsAt: period.startsAt, endsAt: period.endsAt,
+      periodText: period.label || resource.raw_data?.applicationPeriod || '',
       qualification: resource.details || '', eligibility: result,
       source: resource.source_key, priority:resource._priority||'standard'
     };
@@ -298,7 +341,20 @@ export default async function handler(req, res) {
     meta: {
       databaseRows: rows.length,
       categoryMatches: categoryMatches.length,
-      nonActionable: nonActionable.length,
+      nonActionable: categoryMatches.length - actionableMatches.length,
+      actionableMatches: actionableMatches.length,
+      profileMatches: profileMatches.length,
+      openMatches: openMatches.length,
+      analyzedMatches: analyzedMatches.length,
+      aiSelected: items.length,
+      rejected: {
+        category: rows.length - categoryMatches.length,
+        notActionable: categoryMatches.length - actionableMatches.length,
+        profile: actionableMatches.length - profileMatches.length,
+        recruitmentPeriod: profileMatches.length - openMatches.length,
+        analysis: openMatches.length - analyzedMatches.length,
+        ranking: candidates.length - items.length
+      },
       eligible: candidates.length,
       sources: countBy(rows, resource => resource.source_key),
       categories: countBy(rows, categoryOf)

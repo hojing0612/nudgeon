@@ -155,3 +155,26 @@ test('메인 홈페이지뿐이거나 행동 경로가 없는 정책은 노출�
     process.env.VITE_SUPABASE_ANON_KEY = originalKey;
   }
 });
+
+test('명시된 모집기간을 상태값보다 우선하고 한국어 날짜로 정규화한다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  global.fetch = async () => ({ ok: true, json: async () => [
+    resource('expired', { application_status:'always', always_open:true, application_starts_at:'2025-01-01', application_ends_at:'2025-12-31' }),
+    resource('current', { application_status:'closed', always_open:false, application_starts_at:'2026-01-01', application_ends_at:'2026-12-31' })
+  ] });
+  try {
+    const res = responseRecorder();
+    await handler({ method:'GET', query:{ category:'all', age:'20', region:'경기' } }, res);
+    assert.deepEqual(res.body.resources.map(item=>item.id), ['current']);
+    assert.equal(res.body.resources[0].periodText, '2026년 1월 1일 ~ 2026년 12월 31일');
+    assert.equal(res.body.resources[0].applicationStatus, 'open');
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
+  }
+});

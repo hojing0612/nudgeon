@@ -166,6 +166,7 @@ async function loadCsvSheet(sheetName){
 }
 
 function buildQuestions(rows){
+  const connectionOnly = new Set(['s1_age','h_demo','i_demo','p_demo']);
   const groups = new Map();
   rows.filter(r=>isActive(r.active)).forEach(r=>{
     const id = String(r.question_id ?? '').trim();
@@ -193,7 +194,7 @@ function buildQuestions(rows){
     .map(q=>({key:q.key, survey:q.survey, domain:q.domain, flag:q.flag,
       required:q.required, showIf:q.showIf, q:q.q,
       opts:q.opts.sort((a,b)=>a.order-b.order).map(o=>[o.label,o.value,o.score])}))
-    .filter(q=>q.q && q.opts.length);
+    .filter(q=>q.q && q.opts.length && !connectionOnly.has(q.key));
 }
 
 /* ═══ 2단계 자가진단: 군 판정 → 세부 Lv 산출 ═══ */
@@ -242,7 +243,8 @@ function prevIndex(from){
 }
 
 function questionsOf(surveys){
-  return ALL_QUESTIONS.filter(q=>surveys.includes(q.survey));
+  const connectionOnly = new Set(['s1_age','h_demo','i_demo','p_demo']);
+  return ALL_QUESTIONS.filter(q=>surveys.includes(q.survey) && !connectionOnly.has(q.key));
 }
 
 /* 선택한 값의 점수를 찾아온다. 못 찾으면 0. */
@@ -426,7 +428,8 @@ async function initializeApp(){
     await loadContentFromGoogleSheets();
   }catch(error){
     console.warn('Google Sheets 로딩 실패. fallback 데이터를 사용합니다.', error);
-    QUESTIONS=FALLBACK_CONTENT.questions;
+    ALL_QUESTIONS=FALLBACK_CONTENT.questions.filter(q=>!['s1_age','h_demo','i_demo','p_demo'].includes(q.key));
+    QUESTIONS=ALL_QUESTIONS;
     MICROSTEP_CHAINS=FALLBACK_CONTENT.chains;
     DEMO_STEP_PRESETS=FALLBACK_CONTENT.presets;
     SUPPORT_DATA=FALLBACK_CONTENT.support;
@@ -623,20 +626,13 @@ function renderInner(){
   bind();
   if(state.screen==='connect'){
     const needsByVision={work:['career'],study:['education'],social:['community'],unsure:[]};
-    const ageBands={u19:[0,19],a20:[20,24],a25:[25,29],a30:[30,34],o35:[35,99]};
-    const regionValues={seoul:'서울',gyeonggi:'경기'};
-    const ageBand=ageBands[state.answers.s1_age]||null;
-    const regionValue=state.answers.h_demo||state.answers.i_demo||state.answers.p_demo||'';
     window.NudgeonJourneyProfile={
       needs:needsByVision[state.profile?.vision]||[],
       journeyLevel:state.profile?.level||null,
       journeyBarrier:state.profile?.barrier||null,
       journeyVision:state.profile?.vision||null,
       actionSize:state.profile?.actionSize||null,
-      assessmentSignals:assessmentSignals(state.answers),
-      ageMin:ageBand?.[0]??null,
-      ageMax:ageBand?.[1]??null,
-      region:regionValues[regionValue]||''
+      assessmentSignals:assessmentSignals(state.answers)
     };
     window.NudgeonConnect?.mount();
   }
