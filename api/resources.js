@@ -325,6 +325,15 @@ export default async function handler(req, res) {
     return {
       id: resource.id, title: resource.title, summary: resource.summary,
       support: resource.support_details, benefitSummary: resource.ai_analysis?.benefit_summary,
+      presentation: resource.ai_analysis ? {
+        version:resource.ai_analysis.presentation_version||null,
+        summary:resource.ai_analysis.display_summary||'',
+        benefits:resource.ai_analysis.benefit_items||[],
+        eligibility:resource.ai_analysis.eligibility_items||[],
+        documents:resource.ai_analysis.document_items||[],
+        costs:resource.ai_analysis.cost_rows||[],
+        notes:resource.ai_analysis.important_notes||[]
+      } : null,
       organization: resource.organization_name,
       category: categoryOf(resource), applicationUrl: directActionUrl(resource), contact:resource.contact,
       referenceUrl: resource.reference_url, applicationMethod: resource.application_method,
