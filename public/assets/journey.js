@@ -41,6 +41,8 @@ const BARRIERS = {
   energy:  { label:'에너지 부족',       path:'micro' }
 };
 
+const PERSONALIZATION = window.NudgeonPersonalization;
+
 /* 오프라인/에러 상황에서도 시연이 끊기지 않도록 하는 대비 데이터 */
 const FALLBACK_STEPS = {
   going:   ['커튼을 열고 창밖을 1분만 바라보기','현관문 열고 복도 공기 한 번 마시기','신발 신고 집 앞 5분 서 있기'],
@@ -94,6 +96,10 @@ let MICROSTEP_CHAINS = {
   }
 };
 
+/* 시트가 정상 로드되면 40개 전체를 후보로 사용한다. 실패했을 때만 발표용 체인을 쓴다. */
+let MICROSTEP_POOL=[];
+let MICROSTEP_DATA_SOURCE='fallback';
+
 let DEMO_STEP_PRESETS = {
   going:[['walk',5],['stretch',3],['cafe',2]],
   energy:[['stretch',3],['walk',2],['cafe',0]],
@@ -126,6 +132,7 @@ let SUPPORT_DATA = {
 const FALLBACK_CONTENT = {
   questions: JSON.parse(JSON.stringify(QUESTIONS)),
   chains: JSON.parse(JSON.stringify(MICROSTEP_CHAINS)),
+  pool: [],
   presets: JSON.parse(JSON.stringify(DEMO_STEP_PRESETS)),
   support: JSON.parse(JSON.stringify(SUPPORT_DATA))
 };
@@ -150,7 +157,7 @@ async function loadCsvSheet(sheetName){
     'option_value','score','flag','required','active','show_if','note','step_id','chain_id',
     'chain_label','difficulty','title','why_text','feature_type','support_label','barrier_id',
     'barrier_label','recommendation_order','start_difficulty','feature_title',
-    'feature_description','choice_order','choice_title','choice_detail'
+    'feature_description','choice_order','choice_title','choice_detail','level','barrier_tags','goal_tags'
   ];
   const normalizeHeader = header => {
     const value=String(header||'').trim();
@@ -333,8 +340,9 @@ function actionSizeFor(level){
   return '실제 연결로 이어지는 한 단계 행동';
 }
 
-function buildMicrostepChains(rows){
+function buildMicrostepData(rows){
   const groups = new Map();
+  const pool=[];
   rows.filter(r=>isActive(r.active)).forEach(r=>{
     const id=String(r.chain_id ?? '').trim();
     if(!id) return;
@@ -344,24 +352,32 @@ function buildMicrostepChains(rows){
       supportLabel:String(r.support_label ?? '').trim(),
       steps:[]
     });
-    groups.get(id).steps.push({
+    const step={
+      stepId:String(r.step_id??'').trim(),chainId:id,
+      chainLabel:String(r.chain_label??id).trim(),
       difficulty:Number(r.difficulty)||1,
       title:String(r.title ?? '').trim(),
-      why:String(r.why_text ?? '').trim()
-    });
+      why:String(r.why_text ?? '').trim(),
+      feature:String(r.feature_type??'').trim(),supportLabel:String(r.support_label??'').trim(),
+      level:Number(r.level)||3,barrierTags:PERSONALIZATION.splitTags(r.barrier_tags),
+      goalTags:PERSONALIZATION.splitTags(r.goal_tags)
+    };
+    if(step.stepId&&step.title)pool.push(step);
+    groups.get(id).steps.push(step);
   });
-  const result={};
+  const chains={};
   groups.forEach((g,id)=>{
     g.steps.sort((a,b)=>a.difficulty-b.difficulty);
-    result[id]={
+    chains[id]={
       label:g.label,
       feature:g.feature,
       supportLabel:g.supportLabel,
+      steps:g.steps,
       chain:g.steps.map(s=>s.title),
       why:g.steps.map(s=>s.why)
     };
   });
-  return result;
+  return {chains,pool};
 }
 
 function buildPresets(rows, chains){
@@ -417,7 +433,8 @@ async function loadContentFromGoogleSheets(){
     loadCsvSheet('CODE_support')
   ]);
   const questions=buildQuestions(qRows);
-  const chains=buildMicrostepChains(mRows);
+  const microstepData=buildMicrostepData(mRows);
+  const chains=microstepData.chains;
   const presets=buildPresets(pRows,chains);
   const support=buildSupport(sRows);
   if(!questions.length || !Object.keys(chains).length) throw new Error('필수 CODE 시트 데이터가 비어 있습니다.');
@@ -425,6 +442,8 @@ async function loadContentFromGoogleSheets(){
   QUESTIONS=questionsOf(STAGE1);
   if(!QUESTIONS.length) QUESTIONS=questions;
   MICROSTEP_CHAINS=chains;
+  MICROSTEP_POOL=microstepData.pool;
+  MICROSTEP_DATA_SOURCE=MICROSTEP_POOL.length?'sheet':'fallback';
   DEMO_STEP_PRESETS=Object.keys(presets).length ? presets : FALLBACK_CONTENT.presets;
   SUPPORT_DATA=Object.keys(support).length ? support : FALLBACK_CONTENT.support;
   console.info('NudgeOn 콘텐츠를 Google Sheets에서 불러왔습니다.');
@@ -439,6 +458,8 @@ async function initializeApp(){
     ALL_QUESTIONS=FALLBACK_CONTENT.questions.filter(q=>!['s1_age','h_demo','i_demo','p_demo'].includes(q.key));
     QUESTIONS=ALL_QUESTIONS;
     MICROSTEP_CHAINS=FALLBACK_CONTENT.chains;
+    MICROSTEP_POOL=FALLBACK_CONTENT.pool;
+    MICROSTEP_DATA_SOURCE='fallback';
     DEMO_STEP_PRESETS=FALLBACK_CONTENT.presets;
     SUPPORT_DATA=FALLBACK_CONTENT.support;
   }
@@ -468,6 +489,41 @@ function createDemoSteps(barrier){
   }).filter(Boolean);
 }
 
+function readMicrostepPreferences(){
+  try{return JSON.parse(localStorage.getItem(MICROSTEP_PREF_KEY)||'{}')||{};}catch{return {};}
+}
+
+function changeMicrostepPreference(chainId,delta){
+  if(!chainId)return;
+  const preferences=readMicrostepPreferences();
+  const current=Number(preferences[chainId]?.offset)||0;
+  preferences[chainId]={offset:Math.max(-2,Math.min(2,current+delta)),updatedAt:new Date().toISOString()};
+  try{localStorage.setItem(MICROSTEP_PREF_KEY,JSON.stringify(preferences));}
+  catch(error){console.warn('마이크로스텝 난이도 선호 저장 실패:',error);}
+}
+
+function createPersonalizedSteps(regen=false){
+  const currentChains=regen?state.micro.map(step=>step.chainId).filter(Boolean):[];
+  const recommended=PERSONALIZATION.recommendMicrosteps({
+    pool:MICROSTEP_POOL,profile:state.profile,answers:state.answers,
+    avoidChainIds:state.recommendationHistory,hardExcludeChainIds:currentChains,limit:3
+  });
+  const preferences=readMicrostepPreferences();
+  const result=recommended.map(base=>{
+    const group=MICROSTEP_CHAINS[base.chainId];
+    if(!group?.steps?.length)return null;
+    const baseIndex=Math.max(0,group.steps.findIndex(step=>step.stepId===base.stepId));
+    const offset=Number(preferences[base.chainId]?.offset)||0;
+    const difficulty=Math.max(0,Math.min(group.steps.length-1,baseIndex+offset));
+    const selected=group.steps[difficulty];
+    return {stepId:selected.stepId,chainId:base.chainId,difficulty,text:selected.title,why:selected.why,
+      feature:selected.feature,level:selected.level,barrierTags:selected.barrierTags,goalTags:selected.goalTags,
+      done:false,supportOpen:false,selectedSupport:0,adjustedDown:0,adjustedUp:0};
+  }).filter(Boolean);
+  state.recommendationHistory=[...new Set([...state.recommendationHistory,...result.map(step=>step.chainId)])].slice(-24);
+  return result;
+}
+
 const SCENARIOS = [
   { id:'center', title:'상담센터에 처음 전화하기', who:'대학 학생상담센터 상담 접수 직원',
     open:'안녕하세요, 학생상담센터입니다. 무엇을 도와드릴까요?' },
@@ -488,7 +544,7 @@ const state = {
   qi:0, answers:{},
   profile:null, report:null, reportLoading:false, group:null,
   micro:[], scenario:null, messages:[], busy:false,
-  draft:null, nextAction:null, visited:new Set()
+  draft:null, nextAction:null, recommendationHistory:[], visited:new Set()
 };
 
 const stage = document.getElementById('stage');
@@ -496,11 +552,12 @@ const SCREENS = ['check','micro','rehearsal','connect','record'];
 const SCREEN_NAMES = ['자가진단','마이크로스텝','사회적 리허설','공공 복지 연결','기록·성장'];
 const STORAGE_KEY = 'nudgeon.journey.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
+const MICROSTEP_PREF_KEY = 'nudgeon.microstep-preferences.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,reportLoading:false,group:null,
     micro:[],scenario:null,messages:[],busy:false,draft:null,
-    nextAction:null,visited:new Set()});
+    nextAction:null,recommendationHistory:[],visited:new Set()});
   if(ALL_QUESTIONS.length){
     const base=questionsOf(STAGE1);
     QUESTIONS=base.length ? base : ALL_QUESTIONS;
@@ -514,7 +571,8 @@ function persistProgress(){
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       version:1,savedAt:new Date().toISOString(),screen,qi:state.qi,answers:state.answers,
       profile:state.profile,report:state.report,group:state.group,micro:state.micro,
-      draft:state.draft,nextAction:state.nextAction,visited:[...state.visited]
+      draft:state.draft,nextAction:state.nextAction,recommendationHistory:state.recommendationHistory,
+      visited:[...state.visited]
     }));
   }catch(error){ console.warn('기기 저장에 실패했습니다.',error); }
 }
@@ -529,6 +587,7 @@ function restoreProgress(){
       screen:saved.screen,qi:Number(saved.qi)||0,answers:saved.answers||{},profile:saved.profile||null,
       report:saved.report||null,reportLoading:false,group:saved.group||null,micro:Array.isArray(saved.micro)?saved.micro:[],
       draft:saved.draft||null,nextAction:saved.nextAction||null,
+      recommendationHistory:Array.isArray(saved.recommendationHistory)?saved.recommendationHistory:[],
       visited:new Set(Array.isArray(saved.visited)?saved.visited:[])
     });
     if(ALL_QUESTIONS.length){
@@ -598,6 +657,7 @@ function buildProfile(a){
     return { level:n, levelName:lv.name, levelLine:lv.line,
              group, barrier:b, barrierLabel:BARRIERS[b].label,
              path, vision:decideVision(a,group), actionSize:actionSizeFor(n),
+             goalTags:PERSONALIZATION.goalTagsFromAnswers(a),
              evidence:profileEvidence(a,group),
              helpRequest:['none','unsure','(답하지 않음)'].includes(a[HELP_QUESTION.key])?'':(a[HELP_QUESTION.key]||'') };
   }
@@ -611,7 +671,7 @@ function buildProfile(a){
   return { level:n, levelName:lv.name, levelLine:lv.line,
            group:'legacy', barrier:b, barrierLabel:BARRIERS[b].label,
            path:BARRIERS[b].path, vision:a.vision || '아직 정하지 않았어요',
-           actionSize:actionSizeFor(n), evidence:[],
+           actionSize:actionSizeFor(n), goalTags:PERSONALIZATION.goalTagsFromAnswers(a), evidence:[],
            helpRequest:['none','unsure','(답하지 않음)'].includes(a[HELP_QUESTION.key])?'':(a[HELP_QUESTION.key]||'') };
 }
 
@@ -819,7 +879,7 @@ function vMicro(){
   return `
   <div class="eyebrow">02 — Micro Steps</div>
   <h2 class="mid" tabindex="-1">지금 할 수 있는 작은 행동을<br>골라보세요</h2>
-  <p class="lede">마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
+  <p class="lede">자가진단에서 확인한 장벽과 원하는 도움, 현재 Lv를 함께 보고 골랐어요. 마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
       <div class="step-item ${s.done?'done':''}">
@@ -828,7 +888,7 @@ function vMicro(){
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
              ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
         <div class="step-actions">
-          ${s.feature?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
+          ${SUPPORT_DATA[s.feature]?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
           <button class="tiny" data-smaller="${i}" ${s.chainId && s.difficulty===0?'disabled':''}>더 작게</button>
           <button class="tiny" data-larger="${i}" ${!s.chainId || s.difficulty>=MICROSTEP_CHAINS[s.chainId].chain.length-1?'disabled':''}>한 단계 높이기</button>
         </div>
@@ -1034,6 +1094,7 @@ function bind(){
     const i=+b.dataset.tick,step=state.micro[i];
     step.done=!step.done;
     step.completedAt=step.done?new Date().toISOString():null;
+    if(step.done&&step.chainId)changeMicrostepPreference(step.chainId,1);
     render();
   });
   stage.querySelectorAll('[data-smaller]').forEach(b=>b.onclick=()=>makeSmaller(+b.dataset.smaller));
@@ -1188,13 +1249,13 @@ async function finishCheck(){
 }
 
 async function loadSteps(regen=false){
-  const p = state.profile;
-  /* 발표 중 네트워크 상태와 무관하게 항상 같은 완성도 높은 데모를 보여준다. */
-  if(regen && state.micro.length>1){
-    state.micro = [...state.micro.slice(1), state.micro[0]];
-  }else{
-    state.micro = createDemoSteps(p.barrier);
-  }
+  const p=state.profile;
+  /* 정상 상태에서는 40개 시트 후보를 점수화하고, 시트 실패 때만 발표용 3개를 사용한다. */
+  if(MICROSTEP_DATA_SOURCE==='sheet'&&MICROSTEP_POOL.length>=3){
+    state.micro=createPersonalizedSteps(regen);
+  }else if(regen&&state.micro.length>1){
+    state.micro=[...state.micro.slice(1),state.micro[0]];
+  }else state.micro=createDemoSteps(p.barrier);
   render();
 }
 
@@ -1212,14 +1273,20 @@ function adjustMicrostep(i,direction){
   const group=MICROSTEP_CHAINS[cur.chainId];
   const next=Math.max(0,Math.min(group.chain.length-1,cur.difficulty+direction));
   if(next===cur.difficulty) return;
+  const selected=group.steps?.[next];
   cur.difficulty=next;
-  cur.text=group.chain[next];
-  cur.why=group.why[next];
+  cur.stepId=selected?.stepId||cur.stepId;
+  cur.text=selected?.title||group.chain[next];
+  cur.why=selected?.why||group.why[next];
+  cur.feature=selected?.feature||group.feature;
+  cur.level=selected?.level||cur.level;
+  cur.barrierTags=selected?.barrierTags||cur.barrierTags;
+  cur.goalTags=selected?.goalTags||cur.goalTags;
   cur.supportOpen=false;
   cur.done=false;
   cur.completedAt=null;
-  if(direction<0) cur.adjustedDown=(cur.adjustedDown||0)+1;
-  else cur.adjustedUp=(cur.adjustedUp||0)+1;
+  if(direction<0){cur.adjustedDown=(cur.adjustedDown||0)+1;changeMicrostepPreference(cur.chainId,-1);}
+  else{cur.adjustedUp=(cur.adjustedUp||0)+1;changeMicrostepPreference(cur.chainId,1);}
   render();
 }
 
