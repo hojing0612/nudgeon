@@ -3,6 +3,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 let ALL_QUESTIONS = [];
+const HELP_QUESTION={key:'nudgeon_help_open',survey:'closing',domain:'필요한 도움',flag:'OPEN',required:false,showIf:'',q:'NudgeOn을 통해 도움받고 싶거나, 지금 개선하고 싶은 점이 있나요?',opts:[]};
 let QUESTIONS = [
   { key:'out', survey:'legacy',   q:'최근 한 달, 집 밖으로 나간 날은 며칠쯤 될까요?',
     opts:[['0일','a'],['1–3일','b'],['4–7일','c'],['8일 이상','d']] },
@@ -312,6 +313,7 @@ function profileEvidence(a, group){
 
 function assessmentSignals(a){
   return Object.entries(a).map(([key,value])=>{
+    if(key===HELP_QUESTION.key && value && !['(답하지 않음)','none','unsure'].includes(value))return `사용자가 직접 적은 필요한 도움: ${String(value).slice(0,500)}`;
     const q=ALL_QUESTIONS.find(item=>item.key===key);
     const label=answerLabel(key,value);
     return q&&label?`${q.domain||'현재 상태'}: ${label}`:'';
@@ -590,7 +592,8 @@ function buildProfile(a){
     return { level:n, levelName:lv.name, levelLine:lv.line,
              group, barrier:b, barrierLabel:BARRIERS[b].label,
              path, vision:decideVision(a,group), actionSize:actionSizeFor(n),
-             evidence:profileEvidence(a,group) };
+             evidence:profileEvidence(a,group),
+             helpRequest:['none','unsure','(답하지 않음)'].includes(a[HELP_QUESTION.key])?'':(a[HELP_QUESTION.key]||'') };
   }
   let s2 = 0;
   s2 += ({a:0,b:1,c:2,d:3})[a.out]    ?? 0;
@@ -602,7 +605,8 @@ function buildProfile(a){
   return { level:n, levelName:lv.name, levelLine:lv.line,
            group:'legacy', barrier:b, barrierLabel:BARRIERS[b].label,
            path:BARRIERS[b].path, vision:a.vision || '아직 정하지 않았어요',
-           actionSize:actionSizeFor(n), evidence:[] };
+           actionSize:actionSizeFor(n), evidence:[],
+           helpRequest:['none','unsure','(답하지 않음)'].includes(a[HELP_QUESTION.key])?'':(a[HELP_QUESTION.key]||'') };
 }
 
 function render(){
@@ -632,6 +636,7 @@ function renderInner(){
       journeyBarrier:state.profile?.barrier||null,
       journeyVision:state.profile?.vision||null,
       actionSize:state.profile?.actionSize||null,
+      helpRequest:state.profile?.helpRequest||'',
       assessmentSignals:assessmentSignals(state.answers)
     };
     window.NudgeonConnect?.mount();
@@ -741,6 +746,7 @@ function vCheck(){
       style="width:100%; box-sizing:border-box; padding:12px; font:inherit; font-size:15px;
              border:1px solid currentColor; border-radius:8px; background:transparent;
              color:inherit; resize:vertical">${prev}</textarea>
+    ${Q.key===HELP_QUESTION.key?`<div class="open-quick-options"><button class="opt" data-ans="none">딱히 없어요</button><button class="opt" data-ans="unsure">잘 모르겠어요</button></div>`:''}
     <div class="row">
       <button class="btn quiet" data-back="1">이전</button>
       <button class="btn" data-open="1">다음</button>
@@ -1105,7 +1111,12 @@ function answer(val){
     }
   }
 
-  const nxt = nextIndex(state.qi+1);
+  let nxt = nextIndex(state.qi+1);
+  if(nxt<0 && Q.key!==HELP_QUESTION.key){
+    QUESTIONS=QUESTIONS.concat({...HELP_QUESTION});
+    if(!ALL_QUESTIONS.some(item=>item.key===HELP_QUESTION.key))ALL_QUESTIONS=ALL_QUESTIONS.concat({...HELP_QUESTION});
+    nxt=QUESTIONS.length-1;
+  }
   if(justBranched){ state.screen='bridge'; render(); return; }
   if(nxt >= 0){ state.qi = nxt; render(); }
   else finishCheck();
@@ -1237,26 +1248,3 @@ async function send(){
     state.messages.push({role:'them', text:'네, 편하게 말씀해 주세요. 천천히 하셔도 괜찮습니다.'});
     state.messages.push({role:'coach', text:'코칭 · 지금처럼 한 문장만 써도 충분히 전달돼요.'});
   }
-  state.busy = false; render();
-}
-
-async function makeDraft(){
-  const p = state.profile || {
-    level:3, levelName:'제한적 외출', barrierLabel:'정보 과부하', vision:'아직 정하지 않았어요'
-  };
-  state.draft = '문장을 만드는 중…'; render();
-  try{
-    state.draft = await ask(
-      [{role:'user',content:
-        `Lv.${p.level} ${p.levelName}, 장벽 ${p.barrierLabel}, 바람 ${p.vision}인 청년이
-상담센터에 처음 보낼 문의 메시지를 써줘.`}],
-      `한국 대학·청년기관에 처음 문의하는 메시지를 대신 쓴다.
-규칙: 3~4문장. 과하게 사정을 설명하지 않는다. 사과로 시작하지 않는다.
-"늦어서 죄송하지만" 같은 표현 금지. 담담하고 짧게. 메시지 본문만 출력.`);
-  }catch(e){
-    state.draft = '안녕하세요. 상담을 신청하고 싶어 연락드립니다.\n요즘 밖에 나가거나 사람을 만나는 게 어려워서, 어디서부터 도움을 받으면 좋을지 알고 싶습니다.\n첫 상담은 어떻게 진행되는지 알려주실 수 있을까요?';
-  }
-  render();
-}
-
-initializeApp();
