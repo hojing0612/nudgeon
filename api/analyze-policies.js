@@ -4,6 +4,7 @@ const CATEGORIES = ['counseling', 'welfare', 'career', 'housing', 'education', '
 const BENEFITS = ['cash', 'housing_cost', 'loan', 'employment', 'training', 'counseling', 'service', 'event', 'information', 'other'];
 const ANALYSIS_VERSION = 2;
 const PRESENTATION_VERSION = 1;
+const ANALYSIS_BATCH_SIZE = 4;
 
 const analysisSchema = {
   type: 'object', additionalProperties: false, required: ['analyses'],
@@ -68,31 +69,36 @@ export default async function handler(req, res) {
       mode = 'base';
     }
     if (!rows.length) return res.status(200).json({ success:true, analyzed:0, remaining:false });
-    let analyses;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        const result = await callClaudeTool({
+    let analyzed = 0;
+    for (let offset = 0; offset < rows.length; offset += ANALYSIS_BATCH_SIZE) {
+      const batch = rows.slice(offset, offset + ANALYSIS_BATCH_SIZE);
+      let analyses;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          const result = await callClaudeTool({
           name:'save_policy_analysis',
           description:'각 청년정책 원문을 분석해 실질 혜택, 정확한 대상 조건, 신청 상태, 추천 가치와 사용자 화면용 정보를 구조화한다. 반드시 입력된 각 정책의 분석을 analyses 배열에 넣는다. 카테고리는 기관 명칭이 아니라 사용자가 직접 받는 핵심 혜택으로 정한다. 취업상담·일자리센터·면접지원은 career이지 counseling이 아니다. 전월세·보증금·임대·청약은 housing이다. counseling은 심리상담·정신건강·치료비·고립은둔 지원에 한정한다. 단순 기관/센터 소개, 홈페이지·포털·SNS 안내, 정보 제공, 행사·위원회·홍보·공간 운영은 practical_value를 0~3으로 주고 recommended=false로 둔다. 구체적인 신청·예약·지원 경로가 있고 사용자가 직접 받을 혜택만 recommended=true로 둔다. 지역명과 주관기관 소재지를 혼동하지 말고 실제 지원대상 지역만 target_regions에 기록한다. presentation_version은 1로 둔다. display_summary는 사용자가 무엇을 얼마나 받는지 한두 문장으로만 쓴다. benefit_items는 횟수·금액·기간처럼 핵심 혜택만 최대 4개로 쓴다. eligibility_items는 실제 신청자 조건만 최대 6개로 쓰고 기관·상담사 자격이나 사업 설명은 넣지 않는다. document_items에는 제출해야 하는 문서명만 쓰며 자격조건을 반복하지 않는다. 번호, ○, 불릿, 하이픈을 문자열에 포함하지 않는다. 소득구간별 가격이나 본인부담 차이가 원문에 있을 때만 cost_rows로 구조화하고, 근거가 없으면 빈 배열로 둔다. 중요한 예외나 신청 전 주의사항만 important_notes에 최대 3개로 둔다. 같은 정보를 여러 필드에 반복하지 않는다.',
           schema:analysisSchema,
-          input:{ analysis_version:ANALYSIS_VERSION, presentation_version:PRESENTATION_VERSION, mode, today:new Date().toISOString().slice(0,10), policies:rows },
-          maxTokens:8000
-        });
-        analyses = analysesFrom(result);
-        break;
-      } catch (error) {
-        if (attempt === 2) throw error;
-        console.warn('정책 AI 분석 응답 누락으로 한 번 재시도해요');
+            input:{ analysis_version:ANALYSIS_VERSION, presentation_version:PRESENTATION_VERSION, mode, today:new Date().toISOString().slice(0,10), policies:batch },
+            maxTokens:6000
+          });
+          analyses = analysesFrom(result);
+          break;
+        } catch (error) {
+          if (attempt === 2) throw error;
+          console.warn(`정책 AI 분석 ${Math.floor(offset/ANALYSIS_BATCH_SIZE)+1}묶음 응답 누락으로 한 번 재시도해요: ${error.message}`);
+        }
+      }
+      const byId = new Map(analyses.map(item => [item.id,item]));
+      for (const row of batch) {
+        const rawAnalysis = byId.get(row.id);
+        if (!rawAnalysis) continue;
+        const analysis = normalizeAnalysis(rawAnalysis);
+        await db(`resources?id=eq.${row.id}`, { method:'PATCH', body:JSON.stringify({ ai_analysis:analysis, ai_analyzed_at:new Date().toISOString(), status:analysis.confidence < .55 ? 'review' : 'published' }) });
+        analyzed += 1;
       }
     }
-    const byId = new Map(analyses.map(item => [item.id,item]));
-    for (const row of rows) {
-      const rawAnalysis = byId.get(row.id);
-      if (!rawAnalysis) continue;
-      const analysis = normalizeAnalysis(rawAnalysis);
-      await db(`resources?id=eq.${row.id}`, { method:'PATCH', body:JSON.stringify({ ai_analysis:analysis, ai_analyzed_at:new Date().toISOString(), status:analysis.confidence < .55 ? 'review' : 'published' }) });
-    }
-    return res.status(200).json({ success:true, analyzed:byId.size, remaining:true });
+    return res.status(200).json({ success:true, analyzed, remaining:true, batches:Math.ceil(rows.length/ANALYSIS_BATCH_SIZE) });
   } catch (error) {
     console.error('정책 AI 분석 실패:', error);
     return res.status(500).json({ error:'정책 AI 분석에 실패했어요' });
