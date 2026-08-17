@@ -195,7 +195,13 @@ function buildQuestions(rows){
     .map(q=>({key:q.key, survey:q.survey, domain:q.domain, flag:q.flag,
       required:q.required, showIf:q.showIf, q:q.q,
       opts:q.opts.sort((a,b)=>a.order-b.order).map(o=>[o.label,o.value,o.score])}))
-    .filter(q=>q.q && q.opts.length && !connectionOnly.has(q.key));
+    .filter(q=>{
+      if(!q.q || !q.opts.length || connectionOnly.has(q.key)) return false;
+      const labels=q.opts.map(option=>option[0]).join(' ');
+      const asksJobInterest=/(^|_)(job|occupation|career_field)$/i.test(q.key) || /관심\s*(직종|직업|분야)/.test(`${q.domain} ${q.q}`);
+      const asksCurrentStatus=/(대학생|재학생)/.test(labels) && /(취업|재직)/.test(labels) && /(구직|미취업)/.test(labels);
+      return !asksJobInterest && !asksCurrentStatus;
+    });
 }
 
 /* ═══ 2단계 자가진단: 군 판정 → 세부 Lv 산출 ═══ */
