@@ -56,3 +56,45 @@ test('상세 정리가 없는 정책은 Claude로 구조화한 뒤 DB에 캐시�
     process.env=originalEnv;
   }
 });
+
+test('Claude 상세 정리가 두 번 실패해도 원문 정리본을 표시한다', async () => {
+  const originalFetch=global.fetch;
+  const originalEnv={...process.env};
+  process.env.VITE_SUPABASE_URL='https://example.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY='service-key';
+  process.env.ANTHROPIC_API_KEY='anthropic-key';
+  let anthropicCalls=0,patchCalls=0;
+  global.fetch=async (request,options={})=>{
+    const target=String(request);
+    if(target.includes('api.anthropic.com')){
+      anthropicCalls+=1;
+      return {ok:false,status:529,text:async()=>'overloaded'};
+    }
+    if(options.method==='PATCH'){
+      patchCalls+=1;
+      return {ok:true,text:async()=>''};
+    }
+    return {ok:true,text:async()=>JSON.stringify([{
+      id:'33333333-3333-3333-3333-333333333333',title:'심리상담 바우처',
+      summary:'전문 심리상담을 총 8회 받을 수 있어요.',
+      support_details:'○ 총 8회 제공\n- 1회당 최소 50분',
+      details:'1. 정서적 어려움으로 상담이 필요한 사람\n2) 소득 기준 확인',
+      required_documents:'- 신청서\n- 의뢰서',organization_name:'보건복지부',
+      application_method:'※ 주민센터에서 신청',raw_data:{},ai_analysis:{}
+    }])};
+  };
+  try{
+    const res=responseRecorder();
+    await handler({method:'POST',body:{id:'33333333-3333-3333-3333-333333333333'}},res);
+    assert.equal(res.statusCode,200);
+    assert.equal(res.body.fallback,true);
+    assert.equal(res.body.presentation.version,1);
+    assert.deepEqual(res.body.presentation.benefits,['총 8회 제공','1회당 최소 50분']);
+    assert.deepEqual(res.body.presentation.documents,['신청서','의뢰서']);
+    assert.equal(anthropicCalls,2);
+    assert.equal(patchCalls,0);
+  }finally{
+    global.fetch=originalFetch;
+    process.env=originalEnv;
+  }
+});
