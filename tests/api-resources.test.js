@@ -106,6 +106,60 @@ test('AI가 비추천한 자료와 일반 센터 홈페이지를 정책 추천�
   }
 });
 
+test('AI 확신이 낮은 후보는 삭제하지 않고 낮은 우선순위로 남긴다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  delete process.env.ANTHROPIC_API_KEY;
+  global.fetch = async () => ({ ok: true, json: async () => [
+    resource('strong', { ai_analysis: { confidence:.95, recommended:true, practical_value:9, category:'welfare', application_status:'always', nationwide:true } }),
+    resource('uncertain', { ai_analysis: { confidence:.6, recommended:false, practical_value:3, category:'welfare', application_status:'always', nationwide:true } })
+  ] });
+  try {
+    const res = responseRecorder();
+    await handler({ method:'GET', query:{ category:'welfare', age:'21', region:'경기' } }, res);
+    assert.deepEqual(res.body.resources.map(item => item.id), ['strong','uncertain']);
+    assert.equal(res.body.resources[0].priority, 'top');
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
+    if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+  }
+});
+
+test('한 출처와 한 기관의 유사 과정이 추천 목록을 독점하지 않는다', async () => {
+  const originalFetch = global.fetch;
+  const originalUrl = process.env.VITE_SUPABASE_URL;
+  const originalKey = process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL = 'https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY = 'test-key';
+  const repeated = Array.from({ length: 20 }, (_, index) => resource(`repeat-${index}`, {
+    title:`웹개발 훈련 ${index + 1}차`, organization_name:'같은 훈련원', source_key:'work24-training-card',
+    raw_data:{ category:'education', trainingStart:'2026-09-01' }
+  }));
+  const diverse = Array.from({ length: 5 }, (_, index) => resource(`diverse-${index}`, {
+    title:`서로 다른 역량 ${index}`, organization_name:`기관 ${index}`, source_key:`source-${index}`,
+    raw_data:{ category:'education' }
+  }));
+  global.fetch = async () => ({ ok:true, json:async () => [...repeated, ...diverse] });
+  try {
+    const res = responseRecorder();
+    await handler({ method:'GET', query:{ category:'education', age:'21', region:'경기' } }, res);
+    assert.equal(res.body.resources.filter(item => item.organization === '같은 훈련원').length, 1);
+    assert.equal(res.body.resources.filter(item => item.id.startsWith('diverse-')).length, 5);
+    assert.ok(res.body.meta.rejected.duplicateOrDominant >= 19);
+  } finally {
+    global.fetch = originalFetch;
+    process.env.VITE_SUPABASE_URL = originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY = originalKey;
+  }
+});
+
 test('상담 카테고리에서 타 지역·취업상담·포털 자료를 제외한다', async () => {
   const originalFetch = global.fetch;
   const originalUrl = process.env.VITE_SUPABASE_URL;

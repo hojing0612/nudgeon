@@ -52,6 +52,22 @@ test('collects a job-seeker program and preserves its venue and target', async (
   } finally { restore(); }
 });
 
+test('searches future dates and treats Work24 no-data messages as empty dates', async () => {
+  const previous = global.fetch;
+  const requestedDates = [];
+  global.fetch = async request => {
+    const url = new URL(String(request));
+    requestedDates.push(url.searchParams.get('pgmStdt'));
+    return { ok: true, status: 200, text: async () => '<GO24><message>정보가 존재하지 않습니다.</message></GO24>' };
+  };
+  try {
+    const items = await collectJobSeekerPrograms('key', { days: 3, concurrency: 2 });
+    assert.deepEqual(items, []);
+    assert.equal(requestedDates.length, 3);
+    assert.ok(requestedDates.every(date => /^\d{8}$/.test(date)));
+  } finally { global.fetch = previous; }
+});
+
 test('collects youth company experience but not a bare company directory entry', async () => {
   const restore = mockFetch(`
     <traOrgList><total>1</total><traOrg>
@@ -64,6 +80,16 @@ test('collects youth company experience but not a bare company directory entry',
     assert.equal(items.length, 1);
     assert.equal(items[0].source_key, 'work24-youth-company-experience');
     assert.match(items[0].application_url, /E123/);
+  } finally { restore(); }
+});
+
+test('reports the Work24 total and response preview when youth experiences are empty', async () => {
+  const restore = mockFetch('<traOrgList><total>0</total></traOrgList>');
+  try {
+    await assert.rejects(
+      () => collectYouthExperiences('key'),
+      error => /total=0/.test(error.message) && /traOrgList/.test(error.message)
+    );
   } finally { restore(); }
 });
 

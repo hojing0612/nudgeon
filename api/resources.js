@@ -165,24 +165,20 @@ function periodInfo(resource) {
   return { status, startsAt: isoDate(dates.start), endsAt: isoDate(dates.end), label };
 }
 
-function analyzedEligibility(resource, profile) {
+function clearlyIneligibleAfterAnalysis(resource, profile) {
   const ai = resource.ai_analysis;
-  if (eligibility(resource, profile).result === 'unlikely') return false;
-  if (!ai || ai.confidence < .55) return basicEligibility(resource, profile);
-  if (ai.recommended === false) return false;
-  if (Number(ai.practical_value) < 4) return false;
+  if (!ai || Number(ai.confidence) < .8) return false;
+  if (ai.recommended === false && Number(ai.practical_value) <= 2) return true;
   const sourceStatus = statusFromPeriod(resource);
   const applicationStatus = sourceStatus === 'unknown' ? ai.application_status : sourceStatus;
-  if (!['open', 'always'].includes(applicationStatus)) return false;
+  if (applicationStatus === 'closed') return true;
   const region = String(profile.region || '');
-  if (!ai.nationwide && region && (!ai.target_regions?.length || !ai.target_regions.some(value => String(value).includes(region) || region.includes(String(value))))) return false;
+  if (!ai.nationwide && region && ai.target_regions?.length && !ai.target_regions.some(value => String(value).includes(region) || region.includes(String(value)))) return true;
   const userMin = numberOrNull(profile.ageMin) || numberOrNull(profile.age);
   const userMax = numberOrNull(profile.ageMax) || numberOrNull(profile.age);
-  if (ai.age_max && userMin && userMin > ai.age_max) return false;
-  if (ai.age_min && userMax && userMax < ai.age_min) return false;
-  if (profile.education && ai.education_statuses?.length && !ai.education_statuses.includes(profile.education)) return false;
-  if (profile.employment && ai.employment_statuses?.length && !ai.employment_statuses.includes(profile.employment)) return false;
-  return true;
+  if (ai.age_max && userMin && userMin > ai.age_max) return true;
+  if (ai.age_min && userMax && userMax < ai.age_min) return true;
+  return false;
 }
 
 function isActionable(resource) {
@@ -206,9 +202,50 @@ function matchesRequestedCategory(resource, categories, showAll) {
   return true;
 }
 
-function basicEligibility(resource, profile) {
-  if (eligibility(resource, profile).result === 'unlikely') return false;
-  return isActionable(resource) && ['open', 'always'].includes(statusFromPeriod(resource));
+function relevanceScore(resource, profile) {
+  const ai = resource.ai_analysis || {};
+  const result = eligibility(resource, profile);
+  const text = searchableText(resource).toLowerCase();
+  const interests = [...(profile.needs || []), ...(profile.jobs || []), ...(profile.assessmentSignals || [])]
+    .map(value => String(value).trim().toLowerCase()).filter(value => value.length >= 2);
+  let score = Math.max(0, Math.min(10, Number(ai.practical_value) || 4)) * 2;
+  score += ai.recommended === true ? 5 : ai.recommended === false ? -2 : 0;
+  score += directActionUrl(resource) ? 5 : resource.contact ? 3 : 1;
+  score += result.result === 'likely' ? 4 : result.result === 'needs_review' ? 1 : -20;
+  score += statusFromPeriod(resource) === 'always' ? 2 : 3;
+  score += Math.min(8, interests.filter(word => text.includes(word)).length * 2);
+  if (resource.kind === 'program' && resource.raw_data?.trainingStart) score += 2;
+  if (!resource.summary && !resource.support_details) score -= 3;
+  return score;
+}
+
+function similarityKey(resource) {
+  return String(resource.title || '').toLowerCase()
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+    .replace(/20\d{2}|\d+기|\d+차|\d+회차/g, ' ')
+    .replace(/과정|교육|훈련|프로그램|지원사업|모집/g, ' ')
+    .replace(/[^가-힣a-z0-9]/g, '')
+    .slice(0, 36);
+}
+
+function balancedCandidates(resources, profile, max = 60) {
+  const sorted = resources.map(resource => ({ ...resource, _score: relevanceScore(resource, profile) }))
+    .sort((a, b) => b._score - a._score);
+  const selected = [], similar = new Set(), organizations = new Map(), sources = new Map();
+  for (const resource of sorted) {
+    const key = similarityKey(resource);
+    const organization = String(resource.organization_name || 'unknown');
+    const source = String(resource.source_key || 'unknown');
+    if (key && similar.has(key)) continue;
+    if ((organizations.get(organization) || 0) >= 3) continue;
+    if ((sources.get(source) || 0) >= 18) continue;
+    selected.push(resource);
+    if (key) similar.add(key);
+    organizations.set(organization, (organizations.get(organization) || 0) + 1);
+    sources.set(source, (sources.get(source) || 0) + 1);
+    if (selected.length >= max) break;
+  }
+  return selected;
 }
 
 const rankingSchema = {
@@ -221,15 +258,16 @@ const rankingSchema = {
   } } }
 };
 
-async function personalizedOrder(candidates, profile) {
+async function personalizedOrder(candidates, profile, requestedLimit) {
+  const targetCount = Math.min(requestedLimit, 24, candidates.length);
   const fallback = [...candidates]
-    .sort((a, b) => (b.ai_analysis?.practical_value || 0) - (a.ai_analysis?.practical_value || 0))
+    .sort((a, b) => (b._score || 0) - (a._score || 0))
     .map((item,index)=>({...item,_priority:index===0?'top':index<3?'high':'standard',_reason:''}));
-  if (!candidates.length || !process.env.ANTHROPIC_API_KEY) return fallback;
+  if (!candidates.length || !process.env.ANTHROPIC_API_KEY) return fallback.slice(0, targetCount);
   try {
     const result = await callClaudeTool({
       name: 'rank_recommendations',
-      description: '후보 중 사용자가 지금 실제로 신청·예약·지원받을 수 있고 요청 카테고리와 정확히 맞는 자료만 선별한다. 자가진단 신호에서 드러난 현재 어려움, 원하는 변화, 감당 가능한 행동 크기를 활용해 필요도와 실행 가능성을 함께 평가한다. 단순 기관·센터 소개, 홈페이지·포털·SNS 안내, 홍보·행사, 타 지역, 카테고리 오분류, 구체적 혜택이나 이용 방법이 없는 자료는 반환하지 않는다. 비슷한 지원만 반복하지 말고 현금·치료비·바우처·직접 상담·훈련 등 서로 다른 실질 혜택을 우선한다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정하고 나머지는 standard로 정한다. 모든 후보를 반환할 필요가 없다. reason은 내부 검증용 한 문장으로 작성한다.',
+      description: `후보는 코드에서 명백한 지역·연령·마감 불일치와 중복을 이미 제거했다. 자가진단의 현재 필요, 관심 직종, 감당 가능한 행동 크기를 기준으로 순서를 정한다. 정보가 불확실하다는 이유만으로 삭제하지 말고 관련도가 낮으면 standard로 뒤에 둔다. 실질 혜택과 신청 경로가 구체적인 자료를 우선하고 비슷한 종류만 상위에 반복하지 않는다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정한다. 가능하면 ${targetCount}개를 반환하되 명백히 카테고리가 틀리거나 실제 혜택이 없는 후보만 생략한다. reason은 내부 검증용 한 문장으로 작성한다.`,
       schema: rankingSchema,
       input: {
         profile,
@@ -242,13 +280,19 @@ async function personalizedOrder(candidates, profile) {
       maxTokens: 1800
     });
     const byId = new Map(candidates.map(item => [item.id, item]));
-    return (result.selections || []).map(selection => {
+    const selected = (result.selections || []).map(selection => {
       const item=byId.get(selection.id);
       return item?{...item,_priority:selection.priority,_reason:selection.reason}:null;
     }).filter(Boolean);
+    const selectedIds = new Set(selected.map(item => item.id));
+    const remainder = fallback.filter(item => !selectedIds.has(item.id));
+    return [...selected, ...remainder].slice(0, targetCount).map((item, index) => ({
+      ...item,
+      _priority: index === 0 ? 'top' : index < 3 && item._priority !== 'standard' ? 'high' : item._priority || 'standard'
+    }));
   } catch (error) {
     console.error('맞춤 추천 정렬 실패:', error);
-    return fallback;
+    return fallback.slice(0, targetCount);
   }
 }
 
@@ -315,10 +359,9 @@ export default async function handler(req, res) {
   const actionableMatches = categoryMatches.filter(isActionable);
   const profileMatches = actionableMatches.filter(resource => eligibility(resource, profile).result !== 'unlikely');
   const openMatches = profileMatches.filter(resource => ['open','always'].includes(statusFromPeriod(resource)));
-  const analyzedMatches = openMatches.filter(resource => resource.ai_analysis ? analyzedEligibility(resource, profile) : basicEligibility(resource, profile));
-  const candidates = analyzedMatches
-    .slice(0, Math.min(limit, 100));
-  const ranked = await personalizedOrder(candidates, profile);
+  const analyzedMatches = openMatches.filter(resource => !clearlyIneligibleAfterAnalysis(resource, profile));
+  const candidates = balancedCandidates(analyzedMatches, profile, 60);
+  const ranked = await personalizedOrder(candidates, profile, limit);
   const items = ranked.map(resource => {
     const result = eligibility(resource, profile);
     const period = periodInfo(resource);
@@ -362,6 +405,7 @@ export default async function handler(req, res) {
         profile: actionableMatches.length - profileMatches.length,
         recruitmentPeriod: profileMatches.length - openMatches.length,
         analysis: openMatches.length - analyzedMatches.length,
+        duplicateOrDominant: analyzedMatches.length - candidates.length,
         ranking: candidates.length - items.length
       },
       eligible: candidates.length,

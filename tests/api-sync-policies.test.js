@@ -25,7 +25,8 @@ test('공공데이터 인증키를 한 번만 인코딩하고 정확한 ServiceK
       upstreamUrl=target;
       return{ok:true,text:async()=>JSON.stringify({response:{body:{items:{item:[{cnterId:'1',cnterNm:'수원센터',adrs:'경기도 수원시',telno:'123'}]}}}})};
     }
-    if(target.includes('/resources?')){stored=JSON.parse(options.body);return{ok:true,text:async()=>JSON.stringify(stored)};}
+    if(target.includes('/resources?')&&options.method==='POST'){stored=JSON.parse(options.body);return{ok:true,text:async()=>JSON.stringify(stored)};}
+    if(target.includes('/resources?'))return{ok:true,text:async()=>JSON.stringify([])};
     if(options.method==='POST')return{ok:true,text:async()=>JSON.stringify([{id:'run-1'}])};
     return{ok:true,text:async()=>JSON.stringify([])};
   };

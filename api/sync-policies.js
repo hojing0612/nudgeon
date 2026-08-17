@@ -55,6 +55,15 @@ async function db(path,key,opt={}){
   if(!r.ok)throw Error(`Supabase ${r.status}: ${b.slice(0,500)}`);return b?JSON.parse(b):[];
 }
 async function store(items,key){for(let i=0;i<items.length;i+=100)await db('resources?on_conflict=source_key,external_id',key,{method:'POST',body:JSON.stringify(items.slice(i,i+100))})}
+async function existingExternalIds(source,key){
+  const ids=new Set(),limit=1000;
+  for(let offset=0;;offset+=limit){
+    const rows=await db(`resources?select=external_id&source_key=eq.${encodeURIComponent(source)}&limit=${limit}&offset=${offset}`,key);
+    rows.forEach(row=>{if(row.external_id)ids.add(String(row.external_id))});
+    if(rows.length<limit)break;
+  }
+  return ids;
+}
 export default async function handler(req,res){
   if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'GET 또는 POST 요청만 받아요'});
   if(!process.env.CRON_SECRET||req.headers.authorization!==`Bearer ${process.env.CRON_SECRET}`)return res.status(401).json({error:'동기화 권한이 없어요'});
@@ -69,6 +78,6 @@ export default async function handler(req,res){
     ['lh-notice','DATA_GO_KR_LH_NOTICE_API_KEY',lh],
     ['welfare-central','DATA_GO_KR_WELFARE_SERVICE_API_KEY',welfare]
   ],results=[];
-  for(const[source,env,collect]of sources){const apiKey=process.env[env];if(!apiKey){results.push({source,status:'skipped',reason:`${env} missing`});continue}const run=await db('ingestion_runs',key,{method:'POST',body:JSON.stringify({source_key:source,status:'running'})}).catch(()=>[]),id=run[0]?.id;try{const items=await collect(apiKey);if(!items.length)throw Error('API 호출은 완료됐지만 수집된 항목이 0건이에요. 인증키의 해당 서비스 활용승인과 응답 원문을 확인해 주세요.');await store(items,key);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'succeeded',fetched_count:items.length,updated_count:items.length,finished_at:now()})});results.push({source,status:'succeeded',stored:items.length})}catch(e){console.error(`${source} 동기화 실패:`,e);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'failed',error_count:1,error_summary:String(e.message).slice(0,1000),finished_at:now()})}).catch(()=>{});results.push({source,status:'failed',error:String(e.message).slice(0,240)})}}
+  for(const[source,env,collect]of sources){const apiKey=process.env[env];if(!apiKey){results.push({source,status:'skipped',reason:`${env} missing`});continue}const run=await db('ingestion_runs',key,{method:'POST',body:JSON.stringify({source_key:source,status:'running'})}).catch(()=>[]),id=run[0]?.id;try{const items=await collect(apiKey);if(!items.length)throw Error('API 호출은 완료됐지만 수집된 항목이 0건이에요. 인증키의 해당 서비스 활용승인과 응답 원문을 확인해 주세요.');const existing=await existingExternalIds(source,key),inserted=items.filter(item=>!existing.has(String(item.external_id))).length,updated=items.length-inserted;await store(items,key);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'succeeded',fetched_count:items.length,inserted_count:inserted,updated_count:updated,finished_at:now()})});results.push({source,status:'succeeded',stored:items.length,inserted,updated})}catch(e){console.error(`${source} 동기화 실패:`,e);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'failed',error_count:1,error_summary:String(e.message).slice(0,1000),finished_at:now()})}).catch(()=>{});results.push({source,status:'failed',error:String(e.message).slice(0,240)})}}
   const ok=results.filter(x=>x.status==='succeeded').length;return res.status(ok?200:500).json({success:ok>0,sources:results});
 }
