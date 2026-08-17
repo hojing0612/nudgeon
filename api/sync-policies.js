@@ -10,7 +10,17 @@ const date=v=>{const d=str(v).replace(/\D/g,'');if(d.length<8)return null;const 
 const decode=v=>str(v).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,'$1').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
 const xv=(b,t)=>decode(b.match(new RegExp(`<${t}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${t}>`,'i'))?.[1]||'');
 const xb=(x,t)=>[...x.matchAll(new RegExp(`<${t}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${t}>`,'gi'))].map(m=>m[1]);
-async function body(url,params){const r=await fetch(`${url}?${new URLSearchParams(params)}`),b=await r.text();if(!r.ok)throw Error(`${r.status} ${b.slice(0,240)}`);return b}
+export function normalizeApiKey(value){const clean=str(value).replace(/^['"]|['"]$/g,'');try{return decodeURIComponent(clean)}catch{return clean}}
+function publicDataParams(key,params={}){return{ServiceKey:normalizeApiKey(key),...params}}
+function compactDate(value){return value.toISOString().slice(0,10).replace(/-/g,'.')}
+function upstreamError(payload){
+  const auth=xv(payload,'returnAuthMsg')||xv(payload,'errMsg');
+  if(auth)return auth;
+  const code=xv(payload,'resultCode')||xv(payload,'messageCd');
+  const message=xv(payload,'resultMsg')||xv(payload,'message');
+  return code&&!/^(00|0|success)$/i.test(code)?`${code}${message?` ${message}`:''}`:'';
+}
+async function body(url,params){const r=await fetch(`${url}?${new URLSearchParams(params)}`),b=await r.text();if(!r.ok)throw Error(`${r.status} ${b.slice(0,240)}`);const error=upstreamError(b);if(error)throw Error(`API 응답 오류: ${error}`);return b}
 async function json(url,params){const b=await body(url,params);try{return JSON.parse(b)}catch{throw Error(`JSON 응답이 아니에요: ${b.slice(0,240)}`)}}
 function category(v){v=str(v).toLowerCase();if(/상담|마음|심리|정신건강|고립|은둔/.test(v))return'counseling';if(/주거|주택|월세|전세|임대|청약|lh|sh/.test(v))return'housing';if(/취업|구직|일자리|창업|직장|채용|도전지원/.test(v))return'career';if(/교육|훈련|강의|세미나|자격|역량/.test(v))return'education';if(/금융|법률|채무|대출|노동/.test(v))return'finance-legal';if(/문화|모임|활동|참여|봉사|커뮤니티/.test(v))return'community';return'welfare'}
 function youthItem(p){
@@ -25,20 +35,21 @@ async function youth(key){
   return items.map(youthItem).filter(x=>x.external_id);
 }
 async function jobs(key){
-  const x=await body(API.jobs,{authKey:key,callTp:'L',returnType:'XML',startPage:'1',display:'100',regDate:'M-1',sortOrderBy:'DESC'});
+  const x=await body(API.jobs,{authKey:normalizeApiKey(key),callTp:'L',returnType:'XML',startPage:'1',display:'100',sortOrderBy:'DESC'});
   return xb(x,'wanted').map(i=>{const end=date(xv(i,'closeDt'));return{external_id:xv(i,'wantedAuthNo'),source_key:'work24-jobs',kind:'program',status:'published',title:xv(i,'title'),summary:[xv(i,'company'),xv(i,'region'),xv(i,'salTpNm'),xv(i,'sal')].filter(Boolean).join(' · '),details:[xv(i,'career'),xv(i,'minEdubg'),xv(i,'holidayTpNm')].filter(Boolean).join(' · ')||null,organization_name:xv(i,'company')||'고용24',application_url:xv(i,'wantedInfoUrl')||null,application_status:end&&new Date(end)<new Date()?'closed':'open',application_ends_at:end,always_open:false,region_codes:[xv(i,'region')].filter(Boolean),keywords:['채용',xv(i,'indTpNm')].filter(Boolean),verified_at:now(),raw_data:{category:'career',jobsCode:xv(i,'jobsCd'),employmentType:xv(i,'empTpCd')}}}).filter(x=>x.external_id&&x.title&&x.application_status==='open');
 }
 async function finance(key){
-  const raw=await body(API.finance,{serviceKey:key,pageNo:'1',numOfRows:'100',type:'json'});let items=[];
+  const raw=await body(API.finance,publicDataParams(key,{pageNo:'1',numOfRows:'100',type:'json'}));let items=[];
   try{const j=JSON.parse(raw);items=arr(j.response?.body?.items?.item||j.body?.items?.item||j.items?.item)}catch{items=xb(raw,'item').map(i=>({center:xv(i,'cnterNm')||xv(i,'centerNm')||xv(i,'brnchNm'),address:xv(i,'adrs'),area:xv(i,'area'),phone:xv(i,'telno')||xv(i,'tel')}))}
   return items.map((i,n)=>{const title=str(i.cnterNm||i.centerNm||i.brnchNm||i.center||i.brcNm),address=str(i.adrs||i.address||i.roadNmAddr),area=str(i.area||i.ctpvNm||address.split(' ')[0]),phone=str(i.telno||i.tel||i.phone);return{external_id:str(i.cnterId||i.centerId||i.brcId)||`${area}-${title}-${n}`,source_key:'finance-center',kind:'institution',status:'published',title:title||'서민금융통합지원센터',summary:address||'서민금융 상담 및 지원 기관',organization_name:'서민금융진흥원',contact:phone||null,application_status:'always',always_open:true,region_codes:[area].filter(Boolean),keywords:['서민금융','금융상담','채무상담'],verified_at:now(),raw_data:{category:'finance-legal',...i}}});
 }
 async function lh(key){
-  const j=await json(API.lh,{serviceKey:key,PG_SZ:'100',PAGE:'1'}),items=arr(j).flatMap(p=>arr(p.dsList));
+  const from=new Date(),to=new Date();from.setFullYear(from.getFullYear()-1);to.setFullYear(to.getFullYear()+2);
+  const j=await json(API.lh,publicDataParams(key,{PG_SZ:'100',PAGE:'1',PAN_NT_ST_DT:compactDate(from),CLSG_DT:compactDate(to)})),items=arr(j).flatMap(p=>arr(p.dsList));
   return items.map(i=>{const s=str(i.PAN_SS);return{external_id:str(i.PAN_ID),source_key:'lh-notice',kind:'policy',status:'published',title:str(i.PAN_NM),summary:[i.UPP_AIS_TP_NM,i.AIS_TP_CD_NM,i.CNP_CD_NM].map(str).filter(Boolean).join(' · '),organization_name:'한국토지주택공사',application_url:str(i.DTL_URL||i.DTL_URL_MOB)||null,application_status:/접수중|공고중/.test(s)?'open':/마감/.test(s)?'closed':'unknown',application_starts_at:date(i.PAN_NT_ST_DT),application_ends_at:date(i.CLSG_DT),always_open:false,region_codes:[str(i.CNP_CD_NM)].filter(Boolean),keywords:['LH','청년주거',str(i.AIS_TP_CD_NM)].filter(Boolean),verified_at:now(),raw_data:{category:'housing',noticeStatus:s,supplyTypeCode:i.SPL_INF_TP_CD,housingTypeCode:i.AIS_TP_CD}}}).filter(x=>x.external_id&&x.title&&x.application_status==='open');
 }
 async function welfare(key){
-  const x=await body(API.welfare,{serviceKey:key,callTp:'L',pageNo:'1',numOfRows:'500',onapPsbltYn:'Y',orderBy:'popular'});
+  const x=await body(API.welfare,{serviceKey:normalizeApiKey(key),callTp:'L',pageNo:'1',numOfRows:'500',srchKeyCode:'001'});
   return xb(x,'servList').map(i=>{const title=xv(i,'servNm'),summary=xv(i,'servDgst');return{external_id:xv(i,'servId'),source_key:'welfare-central',kind:'policy',status:'published',title,summary:summary||null,organization_name:xv(i,'jurMnofNm')||'중앙부처',application_url:xv(i,'servDtlLink')||null,contact:xv(i,'rprsCtadr')||null,application_status:'always',always_open:true,region_codes:['전국'],keywords:['복지',title].filter(Boolean),verified_at:now(),raw_data:{category:category(`${title} ${summary}`),onlineApplication:xv(i,'onapPsbltYn')}}}).filter(x=>x.external_id&&x.title);
 }
 async function db(path,key,opt={}){
@@ -52,6 +63,6 @@ export default async function handler(req,res){
   if(!process.env.CRON_SECRET||req.headers.authorization!==`Bearer ${process.env.CRON_SECRET}`)return res.status(401).json({error:'동기화 권한이 없어요'});
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!key||!process.env.VITE_SUPABASE_URL)return res.status(500).json({error:'Supabase 환경변수가 설정되지 않았어요'});
   const sources=[['youthcenter','YOUTH_POLICY_API_KEY',youth],['work24-jobs','WORK24_JOBS_API_KEY',jobs],['finance-center','DATA_GO_KR_FINANCE_CENTER_API_KEY',finance],['lh-notice','DATA_GO_KR_LH_NOTICE_API_KEY',lh],['welfare-central','DATA_GO_KR_WELFARE_SERVICE_API_KEY',welfare]],results=[];
-  for(const[source,env,collect]of sources){const apiKey=process.env[env];if(!apiKey){results.push({source,status:'skipped',reason:`${env} missing`});continue}const run=await db('ingestion_runs',key,{method:'POST',body:JSON.stringify({source_key:source,status:'running'})}).catch(()=>[]),id=run[0]?.id;try{const items=await collect(apiKey);await store(items,key);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'succeeded',fetched_count:items.length,updated_count:items.length,finished_at:now()})});results.push({source,status:'succeeded',stored:items.length})}catch(e){console.error(`${source} 동기화 실패:`,e);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'failed',error_count:1,error_summary:String(e.message).slice(0,1000),finished_at:now()})}).catch(()=>{});results.push({source,status:'failed',error:String(e.message).slice(0,240)})}}
+  for(const[source,env,collect]of sources){const apiKey=process.env[env];if(!apiKey){results.push({source,status:'skipped',reason:`${env} missing`});continue}const run=await db('ingestion_runs',key,{method:'POST',body:JSON.stringify({source_key:source,status:'running'})}).catch(()=>[]),id=run[0]?.id;try{const items=await collect(apiKey);if(!items.length)throw Error('API 호출은 완료됐지만 수집된 항목이 0건이에요. 인증키의 해당 서비스 활용승인과 응답 원문을 확인해 주세요.');await store(items,key);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'succeeded',fetched_count:items.length,updated_count:items.length,finished_at:now()})});results.push({source,status:'succeeded',stored:items.length})}catch(e){console.error(`${source} 동기화 실패:`,e);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'failed',error_count:1,error_summary:String(e.message).slice(0,1000),finished_at:now()})}).catch(()=>{});results.push({source,status:'failed',error:String(e.message).slice(0,240)})}}
   const ok=results.filter(x=>x.status==='succeeded').length;return res.status(ok?200:500).json({success:ok>0,sources:results});
 }
