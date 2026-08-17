@@ -49,6 +49,7 @@ test('고용24의 0건 응답을 성공으로 숨기지 않는다',async()=>{
     await handler({method:'POST',headers:{authorization:'Bearer cron-key'}},res);
     assert.equal(res.statusCode,500);
     assert.equal(res.body.sources.find(item=>item.source==='work24-jobs').status,'failed');
-    assert.match(res.body.sources.find(item=>item.source==='work24-jobs').error,/0건/);
+    assert.match(res.body.sources.find(item=>item.source==='work24-jobs').error,/total=0/);
+    assert.match(res.body.sources.find(item=>item.source==='work24-jobs').error,/wantedRoot/);
   }finally{global.fetch=originalFetch;process.env=originalEnv;}
 });
