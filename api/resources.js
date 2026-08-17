@@ -12,6 +12,18 @@ const REGION_PREFIX = {
   '경남': '48', '제주': '50'
 };
 const REGION_NAMES = Object.keys(REGION_PREFIX);
+const SPECIAL_QUALIFICATIONS = [
+  ['disabled', /장애인|중증장애|발달장애/, /장애인\s*(?:만|대상|가구)|(?:지원|신청)\s*대상.{0,20}장애/],
+  ['single-parent', /한부모|청소년부모|미혼모|미혼부/, /(?:한부모|청소년부모|미혼모|미혼부)\s*(?:가족|가구|대상|지원)/],
+  ['care-leaver', /자립준비청년|보호종료아동|보호연장아동/, /자립준비청년|보호종료아동|보호연장아동/],
+  ['family-care', /가족돌봄청년|영케어러/, /가족돌봄청년|영케어러/],
+  ['north-korean-defector', /북한이탈주민|탈북민/, /북한이탈주민|탈북민/],
+  ['multicultural', /다문화가족|이주배경청년|결혼이민자/, /(?:다문화가족|이주배경청년|결혼이민자)\s*(?:대상|지원|가구)?/],
+  ['veteran', /국가유공자|보훈대상|제대군인/, /(?:국가유공자|보훈대상자|제대군인)\s*(?:대상|가족|자녀|지원)?/],
+  ['industrial-accident', /산재근로자|산업재해|산재피해/, /(?:산재근로자|산업재해|산재피해)\s*(?:가족|대상|지원)?/],
+  ['abductee', /납북피해|귀환납북|납북자/, /납북피해|귀환납북|납북자/],
+  ['crime-victim', /범죄피해자|가정폭력피해|성폭력피해/, /(?:범죄피해자|가정폭력피해자|성폭력피해자)\s*(?:대상|가족|지원)?/]
+];
 
 function searchableText(resource) {
   return [resource.title, resource.summary, resource.details, resource.support_details, resource.organization_name]
@@ -52,9 +64,30 @@ function regionsInText(resource) {
 function inferredCategory(resource) {
   const text = searchableText(resource).toLowerCase();
   if (/주거|주택|월세|전세|임대|청약|보증금|lh|sh/.test(text)) return 'housing';
+  if (/대출|융자|보증료|생활자금|생계자금|긴급자금|금융지원/.test(text)) return 'welfare';
+  if (/자격증|자격시험|필기|실기|시험\s*대비|교육과정|훈련과정|수강생/.test(text)) return 'education';
   if (/정신건강|심리|마음건강|우울|불안|고립|은둔|외래치료비/.test(text)) return 'counseling';
   if (/취업|구직|일자리|채용|면접|창업|직업훈련|국민취업지원/.test(text)) return 'career';
   return null;
+}
+
+function requiredSpecialQualifications(resource) {
+  const title=String(resource.title||'');
+  const text=[resource.title,resource.summary,resource.details,resource.support_details,resource.required_documents]
+    .filter(Boolean).join(' ');
+  const analyzed=Array.isArray(resource.ai_analysis?.special_qualifications)
+    ? resource.ai_analysis.special_qualifications.map(String) : [];
+  const detected=SPECIAL_QUALIFICATIONS
+    .filter(([key,term,strong])=>analyzed.includes(key)||term.test(title)||strong.test(text))
+    .map(([key])=>key);
+  return [...new Set(detected)];
+}
+
+function matchesSpecialQualifications(resource,profile) {
+  const required=requiredSpecialQualifications(resource);
+  if(!required.length)return true;
+  const selected=new Set(profile.specialQualifications||[]);
+  return required.some(value=>selected.has(value));
 }
 
 function textIncludesAny(value, words) {
@@ -267,7 +300,7 @@ async function personalizedOrder(candidates, profile, requestedLimit) {
   try {
     const result = await callClaudeTool({
       name: 'rank_recommendations',
-      description: `후보는 코드에서 명백한 지역·연령·마감 불일치와 중복을 이미 제거했다. 자가진단의 현재 필요, 관심 직종, 감당 가능한 행동 크기를 기준으로 순서를 정한다. 정보가 불확실하다는 이유만으로 삭제하지 말고 관련도가 낮으면 standard로 뒤에 둔다. 실질 혜택과 신청 경로가 구체적인 자료를 우선하고 비슷한 종류만 상위에 반복하지 않는다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정한다. 가능하면 ${targetCount}개를 반환하되 명백히 카테고리가 틀리거나 실제 혜택이 없는 후보만 생략한다. reason은 내부 검증용 한 문장으로 작성한다.`,
+      description: `후보는 코드에서 명백한 지역·연령·마감·특수자격 불일치와 중복을 이미 제거했다. 자가진단의 현재 필요, 사용자가 직접 적은 필요한 도움(situation), 관심 직종, 감당 가능한 행동 크기를 기준으로 순서를 정한다. 주관식 상황이 있으면 단어 일치만 보지 말고 사용자가 실제로 해결하고 싶은 문제를 해석해 우선순위에 반영한다. 정보가 불확실하다는 이유만으로 삭제하지 말고 관련도가 낮으면 standard로 뒤에 둔다. 실질 혜택과 신청 경로가 구체적인 자료를 우선하고 비슷한 종류만 상위에 반복하지 않는다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정한다. 가능하면 ${targetCount}개를 반환하되 명백히 카테고리가 틀리거나 실제 혜택이 없는 후보만 생략한다. reason은 내부 검증용 한 문장으로 작성한다.`,
       schema: rankingSchema,
       input: {
         profile,
@@ -350,6 +383,8 @@ export default async function handler(req, res) {
     age: req.query.age, ageMin: req.query.ageMin, ageMax: req.query.ageMax, region: req.query.region,
     education: req.query.education, employment: req.query.employment, income: req.query.income,
     housing:req.query.housing,
+    situation:String(req.query.situation||'').trim().slice(0,500),
+    specialQualifications:String(req.query.specialQualifications||'').split('|').filter(Boolean),
     needs: String(req.query.needs || '').split(',').filter(Boolean), jobs: String(req.query.jobs || '').split(',').filter(Boolean),
     journeyLevel:req.query.journeyLevel, journeyBarrier:req.query.journeyBarrier,
     journeyVision:req.query.journeyVision, actionSize:req.query.actionSize,
@@ -357,7 +392,8 @@ export default async function handler(req, res) {
   };
   const categoryMatches = rows.filter(resource => matchesRequestedCategory(resource, categories, showAll));
   const actionableMatches = categoryMatches.filter(isActionable);
-  const profileMatches = actionableMatches.filter(resource => eligibility(resource, profile).result !== 'unlikely');
+  const specialMatches = actionableMatches.filter(resource => matchesSpecialQualifications(resource,profile));
+  const profileMatches = specialMatches.filter(resource => eligibility(resource, profile).result !== 'unlikely');
   const openMatches = profileMatches.filter(resource => ['open','always'].includes(statusFromPeriod(resource)));
   const analyzedMatches = openMatches.filter(resource => !clearlyIneligibleAfterAnalysis(resource, profile));
   const candidates = balancedCandidates(analyzedMatches, profile, 60);
@@ -395,6 +431,7 @@ export default async function handler(req, res) {
       categoryMatches: categoryMatches.length,
       nonActionable: categoryMatches.length - actionableMatches.length,
       actionableMatches: actionableMatches.length,
+      specialQualificationMatches:specialMatches.length,
       profileMatches: profileMatches.length,
       openMatches: openMatches.length,
       analyzedMatches: analyzedMatches.length,
@@ -402,7 +439,8 @@ export default async function handler(req, res) {
       rejected: {
         category: rows.length - categoryMatches.length,
         notActionable: categoryMatches.length - actionableMatches.length,
-        profile: actionableMatches.length - profileMatches.length,
+        specialQualification:actionableMatches.length-specialMatches.length,
+        profile: specialMatches.length - profileMatches.length,
         recruitmentPeriod: profileMatches.length - openMatches.length,
         analysis: openMatches.length - analyzedMatches.length,
         duplicateOrDominant: analyzedMatches.length - candidates.length,
