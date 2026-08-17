@@ -487,7 +487,7 @@ const state = {
   resumeScreen:null,
   qi:0, answers:{},
   profile:null, report:null, reportLoading:false, group:null,
-  micro:[], scenario:null, messages:[], busy:false,
+  micro:[], selectedMicroIndex:null, scenario:null, messages:[], busy:false,
   draft:null, nextAction:null, visited:new Set()
 };
 
@@ -499,7 +499,7 @@ const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,reportLoading:false,group:null,
-    micro:[],scenario:null,messages:[],busy:false,draft:null,
+    micro:[],selectedMicroIndex:null,scenario:null,messages:[],busy:false,draft:null,
     nextAction:null,visited:new Set()});
   if(ALL_QUESTIONS.length){
     const base=questionsOf(STAGE1);
@@ -514,7 +514,7 @@ function persistProgress(){
     localStorage.setItem(STORAGE_KEY,JSON.stringify({
       version:1,savedAt:new Date().toISOString(),screen,qi:state.qi,answers:state.answers,
       profile:state.profile,report:state.report,group:state.group,micro:state.micro,
-      draft:state.draft,nextAction:state.nextAction,visited:[...state.visited]
+      selectedMicroIndex:state.selectedMicroIndex,draft:state.draft,nextAction:state.nextAction,visited:[...state.visited]
     }));
   }catch(error){ console.warn('기기 저장에 실패했습니다.',error); }
 }
@@ -528,6 +528,7 @@ function restoreProgress(){
     Object.assign(state,{
       screen:saved.screen,qi:Number(saved.qi)||0,answers:saved.answers||{},profile:saved.profile||null,
       report:saved.report||null,reportLoading:false,group:saved.group||null,micro:Array.isArray(saved.micro)?saved.micro:[],
+      selectedMicroIndex:Number.isInteger(saved.selectedMicroIndex)?saved.selectedMicroIndex:null,
       draft:saved.draft||null,nextAction:saved.nextAction||null,
       visited:new Set(Array.isArray(saved.visited)?saved.visited:[])
     });
@@ -562,7 +563,16 @@ function canOpenScreen(screen){
   if(screen==='connect' || screen==='record') return true;
   if(screen==='bridge') return Boolean(state.group);
   if(screen==='report' || screen==='micro' || screen==='rehearsal') return Boolean(state.profile);
+  if(screen==='completion') return Boolean(state.profile && selectedMicrostep());
   return false;
+}
+
+function selectedMicrostep(){
+  if(Number.isInteger(state.selectedMicroIndex) && state.micro[state.selectedMicroIndex]) return state.micro[state.selectedMicroIndex];
+  const index=state.micro.findIndex(step=>step.done);
+  if(index<0) return null;
+  state.selectedMicroIndex=index;
+  return state.micro[index];
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -630,8 +640,10 @@ function render(){
 function renderInner(){
   renderRail();
   document.getElementById('appShell')?.setAttribute('data-screen', state.screen);
+  const isMicroResume=state.screen==='resume' && ['micro','completion'].includes(state.resumeScreen) && selectedMicrostep();
+  document.getElementById('appShell')?.setAttribute('data-resume-kind', isMicroResume ? 'micro' : 'general');
   const fn = {intro:vIntro, resume:vResume, check:vCheck, bridge:vBridge, report:vReport, micro:vMicro,
-              rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
+              completion:vCompletion, rehearsal:vRehearsal, connect:vConnect, record:vRecord}[state.screen];
   stage.innerHTML = fn();
   bind();
   if(state.screen==='connect'){
@@ -652,7 +664,8 @@ function renderInner(){
 }
 
 function renderRail(){
-  const cur = (state.screen==='report'||state.screen==='bridge') ? 'check' : state.screen;
+  const rawScreen=state.screen==='resume' ? state.resumeScreen : state.screen;
+  const cur = (rawScreen==='report'||rawScreen==='bridge') ? 'check' : (rawScreen==='completion' ? 'micro' : rawScreen);
   const ci = SCREENS.indexOf(cur);
   document.getElementById('journey').innerHTML = SCREENS.map((s,i)=>{
     const done = state.visited.has(s) && i !== ci;
@@ -662,7 +675,7 @@ function renderRail(){
       <span class="num">0${i+1}</span><span>${SCREEN_NAMES[i]}</span></button>`;
   }).join('');
 
-  const windowScreen = state.screen === 'resume' ? state.resumeScreen : cur;
+  const windowScreen = cur;
   const windowIndex = SCREENS.indexOf(windowScreen);
   const p = windowIndex >= 0 ? (windowIndex + 1) / SCREENS.length : 0;
   document.getElementById('appShell')?.setAttribute('data-window-screen', windowScreen || 'intro');
@@ -706,6 +719,8 @@ function vIntro(){
 }
 
 function vResume(){
+  const savedStep=['micro','completion'].includes(state.resumeScreen) ? selectedMicrostep() : null;
+  if(savedStep) return vReturnMicro(savedStep);
   const label={check:'자가진단',bridge:'자가진단',report:'자가진단 결과',micro:'마이크로스텝',
     rehearsal:'사회적 리허설',connect:'AI 연결',record:'기록·성장'}[state.resumeScreen]||'이전 활동';
   return `
@@ -718,6 +733,26 @@ function vResume(){
       <div><b>${label}부터 이어갈까요?</b><p>같은 브라우저에서만 이어지며 다른 기기나 계정과 자동 동기화되지는 않아요.</p></div>
     </div>
     <div class="row"><button class="btn" data-resume-saved="1">이어서 하기</button><button class="btn quiet" data-start-fresh="1">처음부터 시작</button></div>
+  </section>`;
+}
+
+function vReturnMicro(step){
+  return `
+  <section class="return-micro-screen">
+    <div class="saved-toast"><b aria-hidden="true">✓</b><span>이전에 선택한 마이크로스텝을 저장해두었어요.</span></div>
+    <div class="eyebrow">STEP 02 · 다시 이어하기</div>
+    <h1 class="big" tabindex="-1">저장한 행동에서<br>이어갈 수 있어요</h1>
+    <p class="lede">그대로 시작하거나 다른 행동을 골라도 괜찮아요.</p>
+    <div class="saved-microstep-card">
+      <span class="saved-step-icon" aria-hidden="true">◒</span>
+      <p>${escapeHtml(step.text)}</p>
+      <b>●&nbsp; 저장한 행동</b>
+    </div>
+    <div class="return-actions">
+      <button class="btn" data-resume-micro="1">이어서 시작하기</button>
+      <button class="btn quiet" data-other-micro="1">다른 행동 고르기</button>
+    </div>
+    <button class="text-action" data-pause="1">다음에 다시 이어도 괜찮아요</button>
   </section>`;
 }
 
@@ -822,7 +857,7 @@ function vMicro(){
   <p class="lede">마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
-      <div class="step-item ${s.done?'done':''}">
+      <div class="step-item ${s.done?'done':''} ${state.selectedMicroIndex===i?'selected':''}">
         <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="완료">${s.done?'✓':''}</button>
         <div><div class="step-text">${s.text}</div>
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
@@ -842,6 +877,18 @@ function vMicro(){
   <p class="note">여기에 <b>연속 달성 스트릭을 일부러 넣지 않았어요.</b> 스트릭이 끊기는 순간
   "역시 나는 못 해"가 되기 쉬운데, 고립 상태에서는 그 실패 신호 하나가 앱을 완전히 떠나게 만들거든요.
   대신 난이도를 올리거나 내리며 실패가 아니라 <b>조정한 기록</b>으로 남겨요.</p>`;
+}
+
+function vCompletion(){
+  return `
+  <section class="completion-screen">
+    <div class="eyebrow">STEP COMPLETE</div>
+    <h1 class="big" tabindex="-1">2단계를 완료했어요</h1>
+    <p class="lede">선택한 행동을 기록했어요. 지금 쉬거나 다음 단계로 이어갈 수 있습니다.</p>
+    <div class="completion-card"><span aria-hidden="true">✓</span><b>마이크로스텝 기록 완료</b></div>
+    <button class="btn completion-next" data-go="rehearsal">3단계로 이어가기</button>
+    <button class="text-action" data-pause="1">여기서 잠시 쉬기</button>
+  </section>`;
 }
 
 
@@ -1007,6 +1054,17 @@ function bind(){
     render();
   });
   stage.querySelectorAll('[data-start-fresh]').forEach(b=>b.onclick=()=>clearProgress('intro'));
+  stage.querySelectorAll('[data-resume-micro]').forEach(b=>b.onclick=()=>{
+    state.micro.forEach(step=>{step.done=false;delete step.completedAt;});
+    state.resumeScreen=null;state.screen='micro';render();
+  });
+  stage.querySelectorAll('[data-other-micro]').forEach(b=>b.onclick=()=>{
+    state.micro.forEach(step=>{step.done=false;step.completedAt=null});
+    state.selectedMicroIndex=null;state.resumeScreen=null;state.screen='micro';render();
+  });
+  stage.querySelectorAll('[data-pause]').forEach(b=>b.onclick=()=>{
+    persistProgress();window.location.href='/home.html?screen=intro';
+  });
   stage.querySelectorAll('[data-clear-progress]').forEach(b=>b.onclick=()=>{
     if(window.confirm('이 기기에 저장된 자가진단과 활동 기록을 모두 삭제할까요?')) clearProgress('intro');
   });
@@ -1032,8 +1090,10 @@ function bind(){
   stage.querySelectorAll('[data-skip]').forEach(b=>b.onclick=()=>answer('(답하지 않음)'));
   stage.querySelectorAll('[data-tick]').forEach(b=>b.onclick=()=>{
     const i=+b.dataset.tick,step=state.micro[i];
-    step.done=!step.done;
-    step.completedAt=step.done?new Date().toISOString():null;
+    const selecting=!step.done;
+    state.micro.forEach((item,index)=>{item.done=selecting&&index===i;item.completedAt=item.done?new Date().toISOString():null});
+    state.selectedMicroIndex=selecting?i:null;
+    if(selecting){state.visited.add('micro');state.screen='completion'}
     render();
   });
   stage.querySelectorAll('[data-smaller]').forEach(b=>b.onclick=()=>makeSmaller(+b.dataset.smaller));
@@ -1189,6 +1249,7 @@ async function finishCheck(){
 
 async function loadSteps(regen=false){
   const p = state.profile;
+  state.selectedMicroIndex=null;
   /* 발표 중 네트워크 상태와 무관하게 항상 같은 완성도 높은 데모를 보여준다. */
   if(regen && state.micro.length>1){
     state.micro = [...state.micro.slice(1), state.micro[0]];
@@ -1218,6 +1279,7 @@ function adjustMicrostep(i,direction){
   cur.supportOpen=false;
   cur.done=false;
   cur.completedAt=null;
+  if(state.selectedMicroIndex===i) state.selectedMicroIndex=null;
   if(direction<0) cur.adjustedDown=(cur.adjustedDown||0)+1;
   else cur.adjustedUp=(cur.adjustedUp||0)+1;
   render();
