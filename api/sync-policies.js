@@ -1,6 +1,7 @@
+import { approvedWork24Sources } from './_work24.js';
+
 const API = {
   youth: 'https://www.youthcenter.go.kr/go/ythip/getPlcy',
-  jobs: 'https://www.work24.go.kr/cm/openApi/call/wk/callOpenApiSvcInfo210L01.do',
   finance: 'https://apis.data.go.kr/B553701/TotalSupportCenterMisoBranchInfoService/getCenterMisoBranchInfo',
   lh: 'https://apis.data.go.kr/B552555/lhLeaseNoticeInfo1/lhLeaseNoticeInfo1',
   welfare: 'https://apis.data.go.kr/B554287/NationalWelfareInformationsV001/NationalWelfarelistV001'
@@ -34,12 +35,6 @@ async function youth(key){
   for(let p=2;p<=Math.ceil(total/100);p++)items.push(...arr((await get(p)).result?.youthPolicyList));
   return items.map(youthItem).filter(x=>x.external_id);
 }
-async function jobs(key){
-  const x=await body(API.jobs,{authKey:normalizeApiKey(key),callTp:'L',returnType:'XML',startPage:'1',display:'100',sortOrderBy:'DESC'});
-  const blocks=xb(x,'wanted');
-  if(!blocks.length){const total=xv(x,'total')||'없음',preview=x.replace(/\s+/g,' ').trim().slice(0,500);throw Error(`고용24 채용정보 응답에 wanted 항목이 없어요. total=${total}, 응답=${preview||'빈 응답'}`)}
-  return blocks.map(i=>{const end=date(xv(i,'closeDt'));return{external_id:xv(i,'wantedAuthNo'),source_key:'work24-jobs',kind:'program',status:'published',title:xv(i,'title'),summary:[xv(i,'company'),xv(i,'region'),xv(i,'salTpNm'),xv(i,'sal')].filter(Boolean).join(' · '),details:[xv(i,'career'),xv(i,'minEdubg'),xv(i,'holidayTpNm')].filter(Boolean).join(' · ')||null,organization_name:xv(i,'company')||'고용24',application_url:xv(i,'wantedInfoUrl')||null,application_status:end&&new Date(end)<new Date()?'closed':'open',application_ends_at:end,always_open:false,region_codes:[xv(i,'region')].filter(Boolean),keywords:['채용',xv(i,'indTpNm')].filter(Boolean),verified_at:now(),raw_data:{category:'career',jobsCode:xv(i,'jobsCd'),employmentType:xv(i,'empTpCd')}}}).filter(x=>x.external_id&&x.title&&x.application_status==='open');
-}
 async function finance(key){
   const raw=await body(API.finance,publicDataParams(key,{pageNo:'1',numOfRows:'100',type:'json'}));let items=[];
   try{const j=JSON.parse(raw);items=arr(j.response?.body?.items?.item||j.body?.items?.item||j.items?.item)}catch{items=xb(raw,'item').map(i=>({center:xv(i,'cnterNm')||xv(i,'centerNm')||xv(i,'brnchNm'),address:xv(i,'adrs'),area:xv(i,'area'),phone:xv(i,'telno')||xv(i,'tel')}))}
@@ -64,7 +59,16 @@ export default async function handler(req,res){
   if(!['GET','POST'].includes(req.method))return res.status(405).json({error:'GET 또는 POST 요청만 받아요'});
   if(!process.env.CRON_SECRET||req.headers.authorization!==`Bearer ${process.env.CRON_SECRET}`)return res.status(401).json({error:'동기화 권한이 없어요'});
   const key=process.env.SUPABASE_SERVICE_ROLE_KEY;if(!key||!process.env.VITE_SUPABASE_URL)return res.status(500).json({error:'Supabase 환경변수가 설정되지 않았어요'});
-  const sources=[['youthcenter','YOUTH_POLICY_API_KEY',youth],['work24-jobs','WORK24_JOBS_API_KEY',jobs],['finance-center','DATA_GO_KR_FINANCE_CENTER_API_KEY',finance],['lh-notice','DATA_GO_KR_LH_NOTICE_API_KEY',lh],['welfare-central','DATA_GO_KR_WELFARE_SERVICE_API_KEY',welfare]],results=[];
+  // General Work24 job-list/detail APIs are deliberately excluded: personal
+  // members are not authorized to use them. Only approved training/program
+  // APIs are synchronized here.
+  const sources=[
+    ['youthcenter','YOUTH_POLICY_API_KEY',youth],
+    ...approvedWork24Sources(),
+    ['finance-center','DATA_GO_KR_FINANCE_CENTER_API_KEY',finance],
+    ['lh-notice','DATA_GO_KR_LH_NOTICE_API_KEY',lh],
+    ['welfare-central','DATA_GO_KR_WELFARE_SERVICE_API_KEY',welfare]
+  ],results=[];
   for(const[source,env,collect]of sources){const apiKey=process.env[env];if(!apiKey){results.push({source,status:'skipped',reason:`${env} missing`});continue}const run=await db('ingestion_runs',key,{method:'POST',body:JSON.stringify({source_key:source,status:'running'})}).catch(()=>[]),id=run[0]?.id;try{const items=await collect(apiKey);if(!items.length)throw Error('API 호출은 완료됐지만 수집된 항목이 0건이에요. 인증키의 해당 서비스 활용승인과 응답 원문을 확인해 주세요.');await store(items,key);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'succeeded',fetched_count:items.length,updated_count:items.length,finished_at:now()})});results.push({source,status:'succeeded',stored:items.length})}catch(e){console.error(`${source} 동기화 실패:`,e);if(id)await db(`ingestion_runs?id=eq.${id}`,key,{method:'PATCH',body:JSON.stringify({status:'failed',error_count:1,error_summary:String(e.message).slice(0,1000),finished_at:now()})}).catch(()=>{});results.push({source,status:'failed',error:String(e.message).slice(0,240)})}}
   const ok=results.filter(x=>x.status==='succeeded').length;return res.status(ok?200:500).json({success:ok>0,sources:results});
 }
