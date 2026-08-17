@@ -232,3 +232,57 @@ test('명시된 모집기간을 상태값보다 우선하고 한국어 날짜로
     process.env.VITE_SUPABASE_ANON_KEY = originalKey;
   }
 });
+
+test('명시적으로 선택하지 않은 특수 자격 전용 정책은 추천하지 않는다', async () => {
+  const originalFetch=global.fetch;
+  const originalUrl=process.env.VITE_SUPABASE_URL;
+  const originalKey=process.env.VITE_SUPABASE_ANON_KEY;
+  const originalAnthropic=process.env.ANTHROPIC_API_KEY;
+  process.env.VITE_SUPABASE_URL='https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY='test-key';
+  delete process.env.ANTHROPIC_API_KEY;
+  global.fetch=async()=>({ok:true,json:async()=>[
+    resource('general',{title:'경기도 청년 생활비 지원'}),
+    resource('abductee',{title:'납북피해자 지원',summary:'전후 납북자 가족의 생활 안정을 지원합니다.'}),
+    resource('care-leaver',{title:'자립준비청년 자립수당',summary:'보호종료아동에게 자립수당을 지원합니다.'})
+  ]});
+  try{
+    const ordinary=responseRecorder();
+    await handler({method:'GET',query:{category:'all',age:'21',region:'경기'}},ordinary);
+    assert.deepEqual(ordinary.body.resources.map(item=>item.id),['general']);
+    assert.equal(ordinary.body.meta.rejected.specialQualification,2);
+
+    const selected=responseRecorder();
+    await handler({method:'GET',query:{category:'all',age:'21',region:'경기',specialQualifications:'care-leaver'}},selected);
+    assert.deepEqual(selected.body.resources.map(item=>item.id).sort(),['care-leaver','general']);
+  }finally{
+    global.fetch=originalFetch;
+    process.env.VITE_SUPABASE_URL=originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY=originalKey;
+    if(originalAnthropic===undefined)delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY=originalAnthropic;
+  }
+});
+
+test('자격증 과정과 청년 금융지원의 카테고리를 내용에 맞게 보정한다', async () => {
+  const originalFetch=global.fetch;
+  const originalUrl=process.env.VITE_SUPABASE_URL;
+  const originalKey=process.env.VITE_SUPABASE_ANON_KEY;
+  process.env.VITE_SUPABASE_URL='https://example.supabase.co';
+  process.env.VITE_SUPABASE_ANON_KEY='test-key';
+  global.fetch=async()=>({ok:true,json:async()=>[
+    resource('certificate',{title:'직업상담사 2급 필기 과정',summary:'자격시험 대비 교육과정',raw_data:{category:'counseling'}}),
+    resource('loan',{title:'미소금융 청년 미래이음 대출',summary:'미취업 저소득 청년에게 생활자금을 지원',raw_data:{category:'career'}})
+  ]});
+  try{
+    const res=responseRecorder();
+    await handler({method:'GET',query:{category:'all',age:'21',region:'경기'}},res);
+    const categories=Object.fromEntries(res.body.resources.map(item=>[item.id,item.category]));
+    assert.equal(categories.certificate,'education');
+    assert.equal(categories.loan,'welfare');
+  }finally{
+    global.fetch=originalFetch;
+    process.env.VITE_SUPABASE_URL=originalUrl;
+    process.env.VITE_SUPABASE_ANON_KEY=originalKey;
+  }
+});
