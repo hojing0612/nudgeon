@@ -1248,3 +1248,26 @@ async function send(){
     state.messages.push({role:'them', text:'네, 편하게 말씀해 주세요. 천천히 하셔도 괜찮습니다.'});
     state.messages.push({role:'coach', text:'코칭 · 지금처럼 한 문장만 써도 충분히 전달돼요.'});
   }
+  state.busy = false; render();
+}
+
+async function makeDraft(){
+  const p = state.profile || {
+    level:3, levelName:'제한적 외출', barrierLabel:'정보 과부하', vision:'아직 정하지 않았어요'
+  };
+  state.draft = '문장을 만드는 중…'; render();
+  try{
+    state.draft = await ask(
+      [{role:'user',content:
+        `Lv.${p.level} ${p.levelName}, 장벽 ${p.barrierLabel}, 바람 ${p.vision}인 청년이
+상담센터에 처음 보낼 문의 메시지를 써줘.`}],
+      `한국 대학·청년기관에 처음 문의하는 메시지를 대신 쓴다.
+규칙: 3~4문장. 과하게 사정을 설명하지 않는다. 사과로 시작하지 않는다.
+"늦어서 죄송하지만" 같은 표현 금지. 담담하고 짧게. 메시지 본문만 출력.`);
+  }catch(e){
+    state.draft = '안녕하세요. 상담을 신청하고 싶어 연락드립니다.\n요즘 밖에 나가거나 사람을 만나는 게 어려워서, 어디서부터 도움을 받으면 좋을지 알고 싶습니다.\n첫 상담은 어떻게 진행되는지 알려주실 수 있을까요?';
+  }
+  render();
+}
+
+initializeApp();
