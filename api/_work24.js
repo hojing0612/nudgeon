@@ -24,11 +24,12 @@ export function normalizeWork24Key(input) {
   return text(input).replace(/^['"]|['"]$/g, '');
 }
 
-async function request(path, params) {
+async function request(path, params, { allowNoData = false } = {}) {
   const response = await fetch(`${BASE}/${path}?${new URLSearchParams(params)}`);
   const payload = await response.text();
   if (!response.ok) throw new Error(`Work24 ${response.status}: ${payload.slice(0, 300)}`);
   const error = value(payload, 'error') || value(payload, 'message');
+  if (allowNoData && /정보가 존재하지 않습니다/.test(error)) return payload;
   if (error) throw new Error(`Work24 응답 오류: ${error}`);
   return payload;
 }
@@ -104,14 +105,21 @@ export async function collectTraining(source, apiKey, { maxPages = 10 } = {}) {
   return items.filter(item => item.external_id && item.title && item.application_url && item.application_status !== 'closed');
 }
 
-export async function collectJobSeekerPrograms(apiKey, { maxPages = 10 } = {}) {
-  const items = [];
-  for (let page = 1; page <= maxPages; page += 1) {
-    const payload = await request('wk/callOpenApiSvcInfo217L01.do', {
-      authKey: normalizeWork24Key(apiKey), returnType: 'XML', startPage: String(page), display: '100'
-    });
-    const pageItems = blocks(payload, 'empPgmSchdInvite');
-    items.push(...pageItems.map(item => {
+export async function collectJobSeekerPrograms(apiKey, { days = 60, concurrency = 4 } = {}) {
+  const key = normalizeWork24Key(apiKey);
+  const dates = Array.from({ length: days }, (_, offset) => {
+    const date = new Date();
+    date.setDate(date.getDate() + offset);
+    return compact(date);
+  });
+  const payloads = [];
+  for (let index = 0; index < dates.length; index += concurrency) {
+    const batch = dates.slice(index, index + concurrency);
+    payloads.push(...await Promise.all(batch.map(pgmStdt => request('wk/callOpenApiSvcInfo217L01.do', {
+      authKey: key, returnType: 'XML', startPage: '1', display: '100', pgmStdt
+    }, { allowNoData: true }))));
+  }
+  const items = payloads.flatMap(payload => blocks(payload, 'empPgmSchdInvite').map(item => {
       const organization = value(item, 'orgNm');
       const program = value(item, 'pgmNm');
       const course = value(item, 'pgmSubNm');
@@ -133,19 +141,21 @@ export async function collectJobSeekerPrograms(apiKey, { maxPages = 10 } = {}) {
         raw_data: { category: 'career', programStart: start, programEnd: end, target: value(item, 'pgmTarget'), applicationPeriod: start ? `현재 ~ ${start.slice(0, 10)}` : null }
       };
     }));
-    const total = Number(value(payload, 'total')) || items.length;
-    if (!pageItems.length || items.length >= total) break;
-  }
-  return items.filter(item => item.external_id && item.title && item.application_status !== 'closed');
+  return [...new Map(items
+    .filter(item => item.external_id && item.title && item.application_status !== 'closed')
+    .map(item => [item.external_id, item])).values()];
 }
 
 export async function collectYouthExperiences(apiKey, { maxPages = 10 } = {}) {
   const items = [];
+  let lastPayload = '';
+  let reportedTotal = 0;
   for (let page = 1; page <= maxPages; page += 1) {
     const payload = await request('wk/callOpenApiSvcInfo216L21.do', {
       authKey: normalizeWork24Key(apiKey), callTp: 'L', returnType: 'XML',
       startPage: String(page), display: '100', sregDtmValCd: '6'
     });
+    lastPayload = payload;
     const pageItems = blocks(payload, 'traOrg');
     items.push(...pageItems.map(item => {
       const id = value(item, 'wantedAuthNo');
@@ -166,10 +176,16 @@ export async function collectYouthExperiences(apiKey, { maxPages = 10 } = {}) {
         raw_data: { category: 'career', trainingStart: start, trainingEnd: end, selectedCount: value(item, 'selPsncnt'), recruitmentCount: value(item, 'collectPsncnt') }
       };
     }));
-    const total = Number(value(payload, 'total')) || items.length;
+    const total = Number(value(payload, 'total')) || 0;
+    reportedTotal = Math.max(reportedTotal, total);
     if (!pageItems.length || items.length >= total) break;
   }
-  return items.filter(item => item.external_id && item.title && item.application_url && item.application_status !== 'closed');
+  const filtered = items.filter(item => item.external_id && item.title && item.application_url && item.application_status !== 'closed');
+  if (!filtered.length) {
+    const preview = lastPayload.replace(/\s+/g, ' ').trim().slice(0, 500);
+    throw new Error(`고용24 청년 직업체험 결과가 없어요. total=${reportedTotal}, 응답=${preview || '빈 응답'}`);
+  }
+  return filtered;
 }
 
 export function approvedWork24Sources() {
