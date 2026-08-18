@@ -1133,6 +1133,35 @@ function monthCalendar(selected,activityDates,habitProgress){
   return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div><div class="habit-calendar-legend"><span>습관 달성률</span><i class="habit-level-1"></i><i class="habit-level-2"></i><i class="habit-level-3"></i><i class="habit-level-4"></i><i class="habit-level-5"></i><b>100%</b></div>`;
 }
 
+const DAILY_HABIT_FALLBACKS={
+  going:['아침에 커튼 열고 햇빛 5분 보기','집 근처 10분 산책하기','하루 3분 스트레칭 하기'],
+  energy:['아침에 물 한 잔 마시기','하루 3분 스트레칭 하기','좋아하는 노래 한 곡 듣기'],
+  contact:['아침에 물 한 잔 마시기','하루 한 번 짧게 감사 표현하기','집 근처 10분 산책하기'],
+  judged:['하루 한 문장 소리 내어 읽기','오늘 잘한 일 한 가지 적기','하루 3분 스트레칭 하기'],
+  overload:['오늘 할 일 한 가지만 적기','집 근처 10분 산책하기','잠들기 전 휴대폰 10분 내려놓기'],
+  late:['오늘 한 일 한 가지 적기','내일 할 작은 일 하나 정하기','집 근처 10분 산책하기']
+};
+function dailyHabitFromMicrostep(step){
+  const title=String(step?.text||step?.title||'');
+  if(step?.chainId==='stretch'||/스트레칭/.test(title))return '하루 3분 스트레칭 하기';
+  if(step?.chainId==='walk'||/산책|걷기|걷는|걷/.test(title))return '집 근처 10분 산책하기';
+  if(/물\s*한\s*잔/.test(title))return '아침에 물 한 잔 마시기';
+  if(/커튼|햇빛|창밖/.test(title))return '아침에 커튼 열고 햇빛 5분 보기';
+  if(/좋아하는\s*노래|노래\s*한\s*곡/.test(title))return '좋아하는 노래 한 곡 듣기';
+  if(/오늘\s*한\s*일/.test(title))return '오늘 한 일 한 가지 적기';
+  if(/내일\s*할/.test(title))return '내일 할 작은 일 하나 정하기';
+  if(/거울.*문장|문장.*소리\s*내/.test(title))return '하루 한 문장 소리 내어 읽기';
+  return '';
+}
+function dailyHabitSuggestions(profile,microsteps,completionHistory,habits){
+  const existing=new Set(habits.map(habit=>habit.name.trim().toLowerCase()));
+  const mapped=[...microsteps,...completionHistory.slice().reverse()].map(dailyHabitFromMicrostep).filter(Boolean);
+  const fallback=DAILY_HABIT_FALLBACKS[profile?.barrier]||DAILY_HABIT_FALLBACKS.energy;
+  return [...mapped,...fallback]
+    .filter((title,index,items)=>items.indexOf(title)===index&&!existing.has(title.toLowerCase()))
+    .slice(0,3);
+}
+
 function vRecord(){
   const saved=Object.values(recordRead(SAVED_RESOURCES_KEY,{}));
   const history=recordRead(REHEARSAL_HISTORY_KEY,[]);
@@ -1174,10 +1203,8 @@ function vRecord(){
   }
   const groupInfo=[['rehearsal','사회적 리허설','03'],['micro','마이크로스텝','02'],['connect','공공복지 연결','04']];
   const activityHtml=groupInfo.map(([key,label,number])=>`<section class="day-activity-group activity-${key}"><div class="day-activity-head"><span>${number}</span><b>${label}</b><small>${activityGroups[key].length}</small></div>${activityGroups[key].length?`<div>${activityGroups[key].map(item=>`<p>${escapeHtml(item)}</p>`).join('')}</div>`:'<p class="muted">기록 없음</p>'}</section>`).join('');
-  const habitTitles=new Set(habits.map(habit=>habit.name.trim().toLowerCase()));
-  const habitSuggestions=[...state.micro.map(step=>step.text),...completionHistory.slice().reverse().map(item=>item.title)]
-    .filter(Boolean).filter((title,index,items)=>items.indexOf(title)===index&&!habitTitles.has(title.trim().toLowerCase())).slice(0,3);
-  const recommendationHtml=habitSuggestions.length?`<div class="habit-recommendations"><div><b>마이크로스텝에서 이어가기</b><span>매일 해보고 싶은 행동을 습관으로 추가해보세요.</span></div><div>${habitSuggestions.map(title=>`<button type="button" data-add-suggested-habit="${escapeHtml(title)}"><span>${escapeHtml(title)}</span><b>+ 추가</b></button>`).join('')}</div></div>`:'';
+  const habitSuggestions=dailyHabitSuggestions(state.profile,state.micro,completionHistory,habits);
+  const recommendationHtml=habitSuggestions.length?`<div class="habit-recommendations"><div><b>매일 이어갈 작은 습관</b><span>마이크로스텝과 현재 상태를 바탕으로, 반복하기 좋은 행동만 골랐어요.</span></div><div>${habitSuggestions.map(title=>`<button type="button" data-add-suggested-habit="${escapeHtml(title)}"><span>${escapeHtml(title)}</span><b>+ 추가</b></button>`).join('')}</div></div>`:'';
   const completedHabitCount=habits.filter(habit=>(habit.completedDates||[]).includes(recordDate)).length;
   const selectedHabitPercent=habits.length?Math.round(completedHabitCount/habits.length*100):0;
   const habitHtml=habits.map(habit=>`<div class="habit-row"><label><input type="checkbox" data-habit-toggle="${escapeHtml(habit.id)}" ${(habit.completedDates||[]).includes(recordDate)?'checked':''}><span>${escapeHtml(habit.name)}</span></label><button type="button" data-delete-habit="${escapeHtml(habit.id)}" aria-label="${escapeHtml(habit.name)} 삭제">삭제</button></div>`).join('')||'<p class="habit-empty">아직 등록한 습관이 없어요. 아주 작은 행동부터 적어보세요.</p>';
