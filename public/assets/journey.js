@@ -915,7 +915,7 @@ function vMicro(){
   return `
   <div class="eyebrow">02 — Micro Steps</div>
   <h2 class="mid" tabindex="-1">지금 할 수 있는 작은 행동을<br>골라보세요</h2>
-  <p class="lede">세 가지는 모두 해야 하는 목록이 아니라 선택지예요. 오늘은 하나만 해도 충분하고, 더 하고 싶다면 여러 개를 이어서 완료해도 괜찮아요. 필요하면 행동을 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
+  <p class="lede">자가진단에서 선택한 답과 직접 적어준 도움 요청을 함께 반영했어요. 세 가지는 모두 해야 하는 목록이 아니라 선택지예요. 오늘은 하나만 해도 충분하고, 더 하고 싶다면 여러 개를 이어서 완료해도 괜찮아요. 필요하면 행동을 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
       <div class="step-item ${s.done?'done':''} ${state.selectedMicroIndex===i?'selected':''}">
