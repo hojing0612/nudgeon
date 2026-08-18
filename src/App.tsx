@@ -92,7 +92,7 @@ function containsCrisisLanguage(text: string) {
   return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-const SAFETY_REPLY = '지금은 역할극을 계속하기보다 즉시 사람의 도움을 받는 것이 먼저예요. 당장 자신이나 다른 사람을 해칠 가능성이 있다면 112 또는 119에 전화하고, 자살예방 상담전화 109에서도 24시간 상담받을 수 있어요.';
+const SAFETY_REPLY = '지금 많이 힘드신가요? 혼자 버티지 않아도 괜찮아요. 우선 역할극을 잠시 멈추고, 지금 연결할 수 있는 도움을 안내해 드릴게요.';
 
 type RehearsalProgress = {
   scenarioId: string | null;
@@ -868,13 +868,15 @@ function App() {
               </div>
               <p>{SAFETY_REPLY}</p>
               <div className="crisis-actions">
-                <a className="crisis-call primary" href="tel:109"><Phone size={17} /><span><b>109</b> 자살예방 상담전화 · 24시간</span></a>
-                <a className="crisis-call" href="tel:112"><Phone size={17} /><span><b>112</b> 즉각적인 범죄·신변 위험</span></a>
-                <a className="crisis-call" href="tel:119"><Phone size={17} /><span><b>119</b> 응급 구조·구급</span></a>
+                <a className="crisis-call primary" href="tel:109">
+                  <Phone size={17} />
+                  <span><b>109 전문 상담 연결</b><small>24시간 운영되는 자살예방 상담전화예요.</small></span>
+                </a>
               </div>
+              <p className="crisis-emergency">지금 당장 자신이나 다른 사람이 위험하다면 <a href="tel:112">112</a> 또는 <a href="tel:119">119</a>에 연락해 주세요.</p>
               <p className="crisis-note">전화하기 어렵다면 가까운 사람에게 “지금 혼자 있으면 위험할 것 같아요”라고 그대로 보여주세요. NudgeOn은 응급기관이나 전문 상담을 대신하지 않습니다.</p>
               <div className="row">
-                <button className="btn quiet" onClick={reset}>상황 선택으로 돌아가기</button>
+                <button className="btn quiet" onClick={reset}>괜찮아요, 대화로 돌아갈게요</button>
                 <a className="btn" href="/home.html">NudgeOn 나가기</a>
               </div>
             </section>
