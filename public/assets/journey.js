@@ -553,6 +553,7 @@ const SCREEN_NAMES = ['자가진단','마이크로스텝','사회적 리허설',
 const STORAGE_KEY = 'nudgeon.journey.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 const MICROSTEP_PREF_KEY = 'nudgeon.microstep-preferences.v1';
+const MICROSTEP_HISTORY_KEY = 'nudgeon.microstep-history.v1';
 
 function resetState(screen='intro'){
   Object.assign(state,{screen,resumeScreen:null,qi:0,answers:{},profile:null,report:null,reportLoading:false,group:null,
@@ -914,11 +915,11 @@ function vMicro(){
   return `
   <div class="eyebrow">02 — Micro Steps</div>
   <h2 class="mid" tabindex="-1">지금 할 수 있는 작은 행동을<br>골라보세요</h2>
-  <p class="lede">자가진단에서 확인한 장벽과 원하는 도움, 현재 Lv를 함께 보고 골랐어요. 마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
+  <p class="lede">세 가지는 모두 해야 하는 목록이 아니라 선택지예요. 오늘은 하나만 해도 충분하고, 더 하고 싶다면 여러 개를 이어서 완료해도 괜찮아요. 필요하면 행동을 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
       <div class="step-item ${s.done?'done':''} ${state.selectedMicroIndex===i?'selected':''}">
-        <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="완료">${s.done?'✓':''}</button>
+        <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="${s.done?'완료 선택 취소':'완료'}">${s.done?'✓':''}</button>
         <div><div class="step-text">${s.text}</div>
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
              ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
@@ -940,13 +941,31 @@ function vMicro(){
 }
 
 function vCompletion(){
+  const step=selectedMicrostep();
+  const completion=microstepHistory().find(item=>item.id===step?.completionId);
+  const hasPhoto=Boolean(completion?.photoDataUrl);
   return `
   <section class="completion-screen">
     <div class="eyebrow">STEP COMPLETE</div>
     <h1 class="big" tabindex="-1">2단계를 완료했어요</h1>
-    <p class="lede">선택한 행동을 기록했어요. 지금 쉬거나 다음 단계로 이어갈 수 있습니다.</p>
-    <div class="completion-card"><span aria-hidden="true">✓</span><b>마이크로스텝 기록 완료</b></div>
-    <button class="btn completion-next" data-go="rehearsal">3단계로 이어가기</button>
+    <p class="lede">선택한 행동을 기록했어요. 원한다면 사진으로 남기거나 바로 다음 단계로 이어갈 수 있습니다.</p>
+    <div class="completion-card photo-completion-card">
+      ${hasPhoto?`<img class="completion-photo" src="${completion.photoDataUrl}" alt="${escapeHtml(completion.title)} 기록 사진">`:'<span aria-hidden="true">✓</span>'}
+      <b>${escapeHtml(step?.text||'마이크로스텝')} 완료</b>
+      <p>${hasPhoto?'사진이 5단계 ‘작은 변화 기록’에 저장됐어요.':'사진을 남기지 않아도 완료는 똑같이 기록돼요.'}</p>
+      <input class="hide" id="microPhotoInput" type="file" accept="image/*" capture="environment">
+      <div class="completion-photo-actions">
+        <button class="btn quiet" type="button" data-add-micro-photo>${hasPhoto?'사진 바꾸기':'사진으로 기록하기'}</button>
+        ${hasPhoto?'<button class="text-action" type="button" data-remove-micro-photo>사진만 삭제</button>':''}
+      </div>
+      <small>사진은 이 기기에만 저장돼요. 얼굴이나 다른 사람이 나오지 않게 사물만 찍어도 괜찮아요.</small>
+      <p class="photo-save-status ${photoSaveStatus.ok===false?'error':''}" aria-live="polite">${escapeHtml(photoSaveStatus.message||'')}</p>
+    </div>
+    <div class="completion-navigation">
+      <button class="btn completion-next" data-go="rehearsal">3단계로 이어가기</button>
+      <button class="btn quiet completion-back" data-go="micro">마이크로스텝으로 돌아가기</button>
+    </div>
+    <p class="completion-choice-note">하나만 해도 충분해요. 더 하고 싶다면 돌아가서 다른 행동도 이어서 완료할 수 있어요.</p>
     <button class="text-action" data-pause="1">여기서 잠시 쉬기</button>
   </section>`;
 }
@@ -1022,8 +1041,63 @@ const RECORD_NOTES_KEY='nudgeon.record-notes.v1';
 const REHEARSAL_HISTORY_KEY='nudgeon.rehearsal-history.v1';
 let recordDate=new Date().toISOString().slice(0,10);
 let recordSaveStatus={date:'',ok:null,message:''};
+let photoSaveStatus={ok:null,message:''};
 function recordRead(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
 function datePart(value){return typeof value==='string'?value.slice(0,10):''}
+function localRecordId(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`}
+function microstepHistory(){
+  const value=recordRead(MICROSTEP_HISTORY_KEY,[]);
+  return Array.isArray(value)?value:[];
+}
+function writeMicrostepHistory(items){
+  localStorage.setItem(MICROSTEP_HISTORY_KEY,JSON.stringify(items.slice(-100)));
+}
+function saveMicrostepCompletion(step){
+  const history=microstepHistory();
+  const entry={
+    id:step.completionId||localRecordId(),
+    stepId:step.stepId||'',
+    title:step.text||'마이크로스텝',
+    completedAt:step.completedAt||new Date().toISOString()
+  };
+  step.completionId=entry.id;
+  history.push(entry);
+  writeMicrostepHistory(history);
+  return entry;
+}
+function updateCompletionPhoto(completionId,photoDataUrl){
+  const history=microstepHistory();
+  const item=history.find(entry=>entry.id===completionId);
+  if(!item) throw new Error('완료 기록을 찾지 못했습니다.');
+  if(photoDataUrl) item.photoDataUrl=photoDataUrl;
+  else delete item.photoDataUrl;
+  item.photoUpdatedAt=new Date().toISOString();
+  writeMicrostepHistory(history);
+}
+function removeMicrostepCompletion(completionId){
+  if(!completionId)return;
+  writeMicrostepHistory(microstepHistory().filter(entry=>entry.id!==completionId));
+}
+function imageToPrivateDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    if(!file?.type?.startsWith('image/')){reject(new Error('사진 파일만 선택할 수 있어요.'));return;}
+    if(file.size>12*1024*1024){reject(new Error('12MB보다 작은 사진을 선택해 주세요.'));return;}
+    const url=URL.createObjectURL(file),image=new Image();
+    image.onload=()=>{
+      try{
+        const maxSide=900,scale=Math.min(1,maxSide/Math.max(image.naturalWidth,image.naturalHeight));
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+        canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+        canvas.getContext('2d',{alpha:false}).drawImage(image,0,0,canvas.width,canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg',.72));
+      }catch(error){URL.revokeObjectURL(url);reject(error);}
+    };
+    image.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('사진을 읽지 못했어요.'));};
+    image.src=url;
+  });
+}
 function monthCalendar(selected,activityDates){
   const date=new Date(`${selected}T12:00:00`),year=date.getFullYear(),month=date.getMonth();
   const first=new Date(year,month,1),last=new Date(year,month+1,0),today=new Date().toISOString().slice(0,10);
@@ -1041,13 +1115,17 @@ function vRecord(){
   const legacyRehearsal=recordRead('nudgeon.rehearsal-summary.v1',null);
   const rehearsals=history.length?history:(legacyRehearsal?[legacyRehearsal]:[]);
   const notes=recordRead(RECORD_NOTES_KEY,{});
+  const completionHistory=microstepHistory();
+  const legacyCompletions=state.micro.filter(step=>step.completedAt&&!completionHistory.some(item=>item.id===step.completionId));
+  const completions=[...completionHistory,...legacyCompletions.map(step=>({id:step.completionId||step.stepId||step.completedAt,title:step.text,completedAt:step.completedAt}))];
+  const dayCompletions=completions.filter(item=>datePart(item.completedAt)===recordDate);
+  const dayPhotos=dayCompletions.filter(item=>item.photoDataUrl);
   const selectedIsToday=recordDate===new Date().toISOString().slice(0,10);
   const stages=[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']];
   const stageLabels={preparing:'준비 중',waiting:'결과 기다리는 중',completed:'완료'};
   const normalizedStage=item=>({interested:'preparing',checking:'preparing',documents:'preparing',applied:'waiting'}[item.stage]||item.stage||'preparing');
   const activities=[];
-  state.micro.filter(step=>datePart(step.completedAt)===recordDate)
-    .forEach(step=>activities.push(`마이크로스텝 완료 · ${step.text}`));
+  dayCompletions.forEach(step=>activities.push(`마이크로스텝 완료 · ${step.title}`));
   rehearsals.filter(item=>datePart(item.savedAt)===recordDate)
     .forEach(item=>activities.push(`사회적 리허설 ${item.completedTurns||0}턴 · ${item.scenarioTitle||'상황 연습'}`));
   saved.filter(item=>datePart(item.savedAt)===recordDate)
@@ -1055,7 +1133,7 @@ function vRecord(){
   saved.forEach(item=>(item.stageHistory||[]).filter(event=>datePart(event.changedAt)===recordDate)
     .forEach(event=>activities.push(`지원 상태 변경 · ${item.resource?.title||'지원'} → ${stageLabels[event.stage]||event.stage}`)));
   const activityDates=new Set([
-    ...state.micro.map(step=>datePart(step.completedAt)),
+    ...completions.map(step=>datePart(step.completedAt)),
     ...rehearsals.map(item=>datePart(item.savedAt)),
     ...saved.map(item=>datePart(item.savedAt)),
     ...saved.flatMap(item=>(item.stageHistory||[]).map(event=>datePart(event.changedAt))),
@@ -1066,6 +1144,10 @@ function vRecord(){
   <h2 class="mid" tabindex="-1">지금까지의 기록을<br>확인해보세요</h2>
   <p class="lede">완료한 단계와 선택한 행동을 한눈에 보고, 다음에 이어갈 곳을 정할 수 있어요.</p>
   <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
+  <section class="change-records">
+    <div class="record-section-head"><div><h3>작은 변화 기록</h3><p>2단계에서 사진으로 남긴 행동을 이곳에서 다시 볼 수 있어요.</p></div><span>사진 ${completions.filter(item=>item.photoDataUrl).length}장</span></div>
+    ${dayPhotos.length?`<div class="change-photo-grid">${dayPhotos.map(item=>`<article class="change-photo-card"><img src="${item.photoDataUrl}" alt="${escapeHtml(item.title)} 기록 사진"><div><time>${escapeHtml(datePart(item.completedAt))}</time><b>${escapeHtml(item.title)}</b><button type="button" data-delete-record-photo="${escapeHtml(item.id)}">사진 삭제</button></div></article>`).join('')}</div>`:'<div class="change-record-empty">이 날짜에는 사진 기록이 없어요. 사진 없이 완료한 행동도 위의 ‘한 일’에 그대로 기록됩니다.</div>'}
+  </section>
   <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
@@ -1105,6 +1187,42 @@ function bind(){
       console.warn('짧은 기록 저장 실패:',error);
       recordSaveStatus={date:recordDate,ok:false,message:'기록을 저장하지 못했어요. 브라우저의 사이트 데이터 설정을 확인해 주세요.'};
     }
+    render();
+  });
+  stage.querySelector('[data-add-micro-photo]')?.addEventListener('click',()=>{
+    document.getElementById('microPhotoInput')?.click();
+  });
+  const photoInput=document.getElementById('microPhotoInput');
+  if(photoInput) photoInput.onchange=async()=>{
+    const step=selectedMicrostep(),file=photoInput.files?.[0];
+    if(!step?.completionId||!file)return;
+    photoSaveStatus={ok:null,message:'사진을 기기에 저장하는 중이에요…'};
+    render();
+    try{
+      const photoDataUrl=await imageToPrivateDataUrl(file);
+      updateCompletionPhoto(step.completionId,photoDataUrl);
+      photoSaveStatus={ok:true,message:'사진을 ‘작은 변화 기록’에 저장했어요.'};
+    }catch(error){
+      console.warn('마이크로스텝 사진 저장 실패:',error);
+      photoSaveStatus={ok:false,message:error?.message?.includes('12MB')?error.message:'사진을 저장하지 못했어요. 더 작은 사진을 선택하거나 브라우저의 사이트 데이터 설정을 확인해 주세요.'};
+    }
+    render();
+  };
+  stage.querySelector('[data-remove-micro-photo]')?.addEventListener('click',()=>{
+    const step=selectedMicrostep();
+    if(!step?.completionId||!window.confirm('사진만 삭제할까요? 마이크로스텝 완료 기록은 그대로 남습니다.'))return;
+    try{
+      updateCompletionPhoto(step.completionId,'');
+      photoSaveStatus={ok:true,message:'사진만 삭제했어요. 완료 기록은 남아 있어요.'};
+    }catch(error){
+      photoSaveStatus={ok:false,message:'사진을 삭제하지 못했어요.'};
+    }
+    render();
+  });
+  stage.querySelectorAll('[data-delete-record-photo]').forEach(button=>button.onclick=()=>{
+    if(!window.confirm('사진만 삭제할까요? 마이크로스텝 완료 기록은 그대로 남습니다.'))return;
+    try{updateCompletionPhoto(button.dataset.deleteRecordPhoto,'');}
+    catch(error){console.warn('기록 사진 삭제 실패:',error);}
     render();
   });
   stage.querySelectorAll('[data-prev-step]').forEach(b=>b.onclick=navigateBack);
@@ -1151,11 +1269,25 @@ function bind(){
   stage.querySelectorAll('[data-tick]').forEach(b=>b.onclick=()=>{
     const i=+b.dataset.tick,step=state.micro[i];
     const selecting=!step.done;
-    state.micro.forEach((item,index)=>{item.done=selecting&&index===i;item.completedAt=item.done?new Date().toISOString():null});
-    state.selectedMicroIndex=selecting?i:null;
     if(selecting){
+      step.done=true;
+      step.completedAt=new Date().toISOString();
+      state.selectedMicroIndex=i;
+      step.completionId=localRecordId();
+      try{saveMicrostepCompletion(step);}
+      catch(error){console.warn('마이크로스텝 완료 기록 저장 실패:',error);}
+      photoSaveStatus={ok:null,message:''};
       if(step.chainId)changeMicrostepPreference(step.chainId,1);
       state.visited.add('micro');state.screen='completion';
+    }else{
+      const completion=microstepHistory().find(item=>item.id===step.completionId);
+      if(completion?.photoDataUrl && !window.confirm('완료 선택을 취소하면 이 행동의 사진 기록도 함께 삭제돼요. 취소할까요?'))return;
+      try{removeMicrostepCompletion(step.completionId);}
+      catch(error){console.warn('마이크로스텝 완료 기록 취소 실패:',error);return;}
+      step.done=false;
+      delete step.completedAt;
+      delete step.completionId;
+      if(state.selectedMicroIndex===i)state.selectedMicroIndex=null;
     }
     render();
   });
