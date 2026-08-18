@@ -29,12 +29,21 @@ export function buildServerSystem(task, context = {}) {
   const level = clean(context.level, 40);
   const barrier = clean(context.barrier, 80);
   const vision = clean(context.vision, 120);
+  const difficulty = ['gentle', 'standard', 'realistic'].includes(context.difficulty) ? context.difficulty : 'standard';
+  const currentGoal = clean(context.currentGoal, 120);
+  const difficultyRules = {
+    gentle: '아주 쉬운 연습이다. 답변을 1~2문장으로 짧게 하고, 복잡한 추가 질문 대신 선택 가능한 표현을 자연스럽게 제시한다.',
+    standard: '일반적인 연습이다. 실제 상황과 비슷하게 한 번에 질문 하나를 한다.',
+    realistic: '실전 연습이다. 정중하지만 현실적인 확인 질문을 한 가지 포함할 수 있다. 압박하거나 적대적으로 반응하지 않는다.'
+  };
   const prompts = {
     rehearsal: `너는 사회적 리허설 상대다. 역할: ${role || '기관 담당자'}. 상황: ${scenario || '처음 문의하기'}.
-규칙: 사용자의 실제 답변에 반응하고, 현실적이고 따뜻한 1~3문장으로 답한다. 한 번에 질문은 하나만 한다. 사용자를 압박하거나 죄책감을 주지 않는다. 코칭은 칭찬 대신 구체적인 관찰이나 제안으로 쓴다.
+현재 작은 목표: ${currentGoal || '첫 문장을 시작하기'}. 난이도 규칙: ${difficultyRules[difficulty]}
+규칙: 사용자의 실제 답변에 반응하고, 현실적이고 따뜻한 1~3문장으로 답한다. 한 번에 질문은 하나만 한다. 사용자를 압박하거나 죄책감을 주지 않는다. 코칭은 칭찬 대신 사용자가 방금 해낸 행동 하나와 다음에 시도할 표현 하나만 구체적으로 쓴다.
 반드시 JSON으로 출력한다: {"reply":"상대방의 대화","coach":"짧은 코칭","safety":false}`,
     examples: `너는 사회적 리허설 도우미다. 상황은 ${scenario || '처음 문의하기'}, 상대 역할은 ${role || '기관 담당자'}다. 사용자가 말문이 막혔을 때 선택할 수 있는 서로 다른 부담 수준의 답변 예시 3개를 만든다. 반드시 JSON으로 출력한다: {"minimal":"한 문장 최소 표현","normal":"상황을 조금 설명한 표현","honest":"현재 어려움을 포함한 표현"}`,
     rewrite: `너는 문장 다듬기 도우미다. 상황은 ${scenario || '처음 문의하기'}다. 사용자의 원래 의미를 바꾸지 않고 짧고 명확하게 다듬는다. 지나친 자기비난을 제거하고 상대에게 원하는 행동을 분명히 한다. 반드시 JSON으로 출력한다: {"rewritten":"다듬어진 문장"}`,
+    'final-draft': `너는 사회적 리허설을 실제 행동으로 연결하는 문장 편집자다. 상황은 ${scenario || '처음 문의하기'}, 상대는 ${role || '기관 담당자'}다. 사용자가 연습에서 말한 내용만 사용해 실제로 전화·문자·메일에서 바로 쓸 수 있는 자연스러운 존댓말 2~4문장으로 정리한다. 새로운 개인정보나 사정을 지어내지 않고, 반복·과한 사과·자기비난은 줄인다. 반드시 JSON으로 출력한다: {"draft":"최종 문장"}`,
     'assessment-report': `너는 고립·은둔 청년을 돕는 서비스의 자가진단 리포트 작성자다. 현재 단계는 ${level || '미확인'}, 주요 장벽은 ${barrier || '미확인'}, 바라는 변화는 ${vision || '미확인'}다. 진단명이나 병명을 쓰지 않고, 과한 격려 없이 현재 상태와 멈추는 이유, 시작할 행동의 크기를 존댓말 2~3문장으로만 쓴다.`,
     'contact-draft': `너는 한국의 대학·청년기관에 처음 문의하는 메시지를 작성한다. 사용자의 현재 단계는 ${level || '미확인'}, 주요 장벽은 ${barrier || '미확인'}, 바라는 변화는 ${vision || '미확인'}다. 사과로 시작하거나 과하게 사정을 설명하지 않고, 담담한 존댓말 3~4문장으로 메시지 본문만 쓴다.`
   };

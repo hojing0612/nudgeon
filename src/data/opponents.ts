@@ -6,6 +6,12 @@ export type Scenario = {
   portrait: string;
   opponentName: string;
   opponentRole: string;
+  goals: string[];
+  openings: {
+    gentle: string;
+    standard: string;
+    realistic: string;
+  };
 };
 
 export const SCENARIOS: Scenario[] = [
@@ -17,6 +23,12 @@ export const SCENARIOS: Scenario[] = [
     portrait: 'https://images.pexels.com/photos/4269206/pexels-photo-4269206.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
     opponentName: '최유나',
     opponentRole: '상담 접수 직원',
+    goals: ['인사를 건네기', '상담을 원하는 이유 말하기', '신청 방법이나 가능한 일정 묻기'],
+    openings: {
+      gentle: '안녕하세요, 학생상담센터입니다. 상담 신청을 원하시면 “상담받고 싶어요”라고만 말씀해도 괜찮아요.',
+      standard: '안녕하세요, 학생상담센터입니다. 무엇을 도와드릴까요?',
+      realistic: '학생상담센터입니다. 상담 신청 문의이신가요? 현재 어떤 도움을 원하시는지 간단히 말씀해 주시겠어요?',
+    },
   },
   {
     id: 'prof',
@@ -26,6 +38,12 @@ export const SCENARIOS: Scenario[] = [
     portrait: 'https://images.pexels.com/photos/8617730/pexels-photo-8617730.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
     opponentName: '김도현',
     opponentRole: '지도교수',
+    goals: ['늦었지만 연락을 시작하기', '현재 상황을 필요한 만큼 설명하기', '원하는 다음 대화나 도움 요청하기'],
+    openings: {
+      gentle: '오랜만이구나. 길게 설명하지 않아도 괜찮으니, 오늘 연락한 이유만 편하게 말해보렴.',
+      standard: '그래, 오랜만이구나. 어떻게 지냈니?',
+      realistic: '오랜만이구나. 한동안 연락이 없어서 궁금했어. 지금 이야기하고 싶은 일이 있니?',
+    },
   },
   {
     id: 'friend',
@@ -35,6 +53,12 @@ export const SCENARIOS: Scenario[] = [
     portrait: 'https://images.pexels.com/photos/17503453/pexels-photo-17503453.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
     opponentName: '이정훈',
     opponentRole: '오랜 친구',
+    goals: ['답장을 시작하기', '연락이 늦은 이유를 원하는 만큼 전하기', '다음 연락의 크기 정하기'],
+    openings: {
+      gentle: '왔네! 반가워. 지금은 “오랜만이야”라고만 해도 돼.',
+      standard: '어 왔네ㅋㅋ 잘 지냈어? 요즘 뭐하고 지내?',
+      realistic: '진짜 오랜만이다. 한동안 연락이 없어서 조금 걱정했어. 요즘은 어떻게 지내?',
+    },
   },
   {
     id: 'apply',
@@ -44,6 +68,12 @@ export const SCENARIOS: Scenario[] = [
     portrait: 'https://images.pexels.com/photos/8466222/pexels-photo-8466222.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
     opponentName: '박서연',
     opponentRole: '담당 주무관',
+    goals: ['문의 목적 말하기', '신청 자격이나 절차 확인하기', '다음에 준비할 것 확인하기'],
+    openings: {
+      gentle: '안녕하세요, 청년도전지원사업 담당입니다. 문의하고 싶다고 한 말씀만 해주셔도 제가 차근차근 여쭤볼게요.',
+      standard: '네, 청년도전지원사업 담당입니다. 문의 주신 내용이 어떤 건가요?',
+      realistic: '청년도전지원사업 담당입니다. 신청 자격, 일정, 제출 서류 중 어떤 내용을 먼저 확인하고 싶으신가요?',
+    },
   },
 ];
 

@@ -24,6 +24,15 @@ import { useFaceAnalysis } from '@/hooks/useFaceAnalysis';
 import { useKoreanTTS } from '@/hooks/useKoreanTTS';
 import { useSpeechRecognition, isSpeechRecognitionSupported } from '@/hooks/useSpeechRecognition';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import {
+  behaviorFeedback,
+  completedGoalCount,
+  DIFFICULTY_META,
+  recommendDifficulty,
+  recommendScenarioId,
+  readJourneySnapshot,
+} from '@/lib/rehearsalPersonalization';
+import type { RehearsalDifficulty } from '@/lib/rehearsalPersonalization';
 import { SCENARIOS, FALLBACK_EXAMPLES, NEXT_STEPS } from '@/data/opponents';
 import type { Scenario, ChatMessage } from '@/data/opponents';
 import { OpponentPanel } from '@/components/OpponentPanel';
@@ -36,6 +45,7 @@ const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
 const REHEARSAL_HISTORY_KEY = 'nudgeon.rehearsal-history.v1';
 const RESOURCE_CONTEXT_KEY = 'nudgeon.rehearsal-context.v1';
 const CONNECT_FOCUS_KEY = 'nudgeon.connect-focus-resource.v1';
+const JOURNEY_KEY = 'nudgeon.journey.v1';
 
 type ResourceRehearsalContext = {
   resourceId: string;
@@ -71,10 +81,24 @@ function loadResourceRehearsalContext(): ResourceRehearsalContext | null {
         portrait: SCENARIOS.find((item) => item.id === 'apply')?.portrait || '',
         opponentName: '지원 담당자',
         opponentRole: organization,
+        goals: ['문의 목적 말하기', '신청 자격이나 절차 확인하기', '다음에 준비할 것 확인하기'],
+        openings: {
+          gentle: `안녕하세요, ${resourceTitle} 담당자입니다. 문의하고 싶다고 한 말씀만 해주셔도 제가 차근차근 여쭤볼게요.`,
+          standard: `안녕하세요, ${organization} ${resourceTitle} 담당자입니다. 어떤 점이 궁금하신가요?`,
+          realistic: `안녕하세요, ${resourceTitle} 담당자입니다. 신청 자격, 일정, 제출 서류 중 어떤 내용을 먼저 확인하고 싶으신가요?`,
+        },
       },
     };
   } catch {
     return null;
+  }
+}
+
+function loadJourneyContext() {
+  try {
+    return readJourneySnapshot(localStorage.getItem(JOURNEY_KEY));
+  } catch {
+    return readJourneySnapshot(null);
   }
 }
 
@@ -104,6 +128,7 @@ type RehearsalProgress = {
   promptHelpCount: number;
   rewriteCount: number;
   elapsed: number;
+  difficulty: RehearsalDifficulty;
 };
 
 function loadRehearsalProgress(): RehearsalProgress | null {
@@ -121,6 +146,7 @@ function loadRehearsalProgress(): RehearsalProgress | null {
       promptHelpCount: Number(saved.promptHelpCount) || 0,
       rewriteCount: Number(saved.rewriteCount) || 0,
       elapsed: Number(saved.elapsed) || 0,
+      difficulty: ['gentle', 'standard', 'realistic'].includes(saved.difficulty) ? saved.difficulty : 'standard',
     };
   } catch {
     return null;
@@ -159,7 +185,12 @@ function parseAIResponse(text: string): AISafetyCheck {
   };
 }
 
-async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<AISafetyCheck> {
+async function askAI(
+  messages: ChatMessage[],
+  scenario: Scenario,
+  difficulty: RehearsalDifficulty,
+  currentGoal: string,
+): Promise<AISafetyCheck> {
   const history = messages
     .filter((m) => m.role !== 'coach')
     .map((m) => ({ role: m.role === 'me' ? 'user' : 'assistant', content: m.text }));
@@ -170,7 +201,13 @@ async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<AISaf
     body: JSON.stringify({
       messages: history,
       task: 'rehearsal',
-      context: { scenario: scenario.title, role: scenario.who },
+      context: {
+        scenario: scenario.title,
+        role: scenario.who,
+        difficulty,
+        currentGoal,
+        turn: history.filter((message) => message.role === 'user').length,
+      },
     }),
   });
 
@@ -178,6 +215,36 @@ async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<AISaf
   const data = await res.json();
   const parsed = parseAIResponse(data.text || '');
   return { ...parsed, isSafety: data.safety === true || parsed.isSafety };
+}
+
+async function askAIForFinalDraft(
+  scenario: Scenario,
+  messages: ChatMessage[],
+  difficulty: RehearsalDifficulty,
+): Promise<string> {
+  const userLines = messages.filter((message) => message.role === 'me').map((message) => message.text);
+  if (!userLines.length) return '';
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: userLines.join('\n') }],
+      task: 'final-draft',
+      context: { scenario: scenario.title, role: scenario.who, difficulty },
+    }),
+  });
+  if (!res.ok) throw new Error('API ' + res.status);
+  const data = await res.json();
+  const text = String(data.text || '').trim();
+  try {
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+      if (parsed.draft) return String(parsed.draft).trim();
+    }
+  } catch { /* use the most recent user sentence below */ }
+  return userLines[userLines.length - 1] || '';
 }
 
 async function askAIForExamples(scenario: Scenario, messages: ChatMessage[]): Promise<{ minimal: string; normal: string; honest: string }> {
@@ -243,6 +310,9 @@ async function askAIForRewrite(scenario: Scenario, userText: string): Promise<st
 }
 
 function App() {
+  const journeyContextRef = useRef(loadJourneyContext());
+  const journeyContext = journeyContextRef.current;
+  const recommendedScenarioId = recommendScenarioId(journeyContext);
   const restoredProgressRef = useRef<RehearsalProgress | null>(loadRehearsalProgress());
   const restoredProgress = restoredProgressRef.current;
   const resourceContextRef = useRef<ResourceRehearsalContext | null>(loadResourceRehearsalContext());
@@ -255,6 +325,9 @@ function App() {
   const streamRef = useRef<MediaStream | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(() =>
     resourceContext?.scenario || SCENARIOS.find((item) => item.id === applicableProgress?.scenarioId) || null);
+  const [difficulty, setDifficulty] = useState<RehearsalDifficulty>(() =>
+    applicableProgress?.difficulty || recommendDifficulty(journeyContext.level));
+  const difficultyTouchedRef = useRef(false);
   const [phase, setPhase] = useState<Phase>(resourceContext && !applicableProgress ? 'prep' : applicableProgress?.phase || 'idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -287,6 +360,8 @@ function App() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [consentTranscript, setConsentTranscript] = useState(false);
+  const [finalDraft, setFinalDraft] = useState('');
+  const [finalDraftLoading, setFinalDraftLoading] = useState(false);
 
   const voiceActive = phase === 'user-turn' || phase === 'speaking';
   const { metrics: voiceMetrics, error: voiceError } = useVoiceAnalysis(voiceActive, true);
@@ -365,13 +440,13 @@ function App() {
       localStorage.setItem(REHEARSAL_PROGRESS_KEY, JSON.stringify({
         scenarioId: scenario?.id || null, phase,
         burdenBefore, burdenAfter, readiness, selectedNextStep,
-        promptHelpCount, rewriteCount, elapsed,
+        promptHelpCount, rewriteCount, elapsed, difficulty,
       } satisfies RehearsalProgress));
     } catch {
       // Private browsing or device policy may disable local storage.
     }
   }, [scenario, phase, burdenBefore, burdenAfter,
-    readiness, selectedNextStep, promptHelpCount, rewriteCount, elapsed]);
+    readiness, selectedNextStep, promptHelpCount, rewriteCount, elapsed, difficulty]);
 
   useEffect(() => {
     if (phase === 'user-turn' && opponentFinishTimeRef.current > 0 && !userStartedRef.current) {
@@ -415,17 +490,22 @@ function App() {
     setSavedId(null);
     setSaveError(null);
     setConsentTranscript(false);
-  }, []);
+    setFinalDraft('');
+    setFinalDraftLoading(false);
+    difficultyTouchedRef.current = false;
+    setDifficulty(recommendDifficulty(journeyContext.level));
+  }, [journeyContext.level]);
 
   const startPractice = useCallback(() => {
     if (!scenario || burdenBefore === null) return;
-    setMessages([{ role: 'them', text: scenario.open }]);
-    setCurrentLine(scenario.open);
+    const opening = scenario.openings[difficulty] || scenario.open;
+    setMessages([{ role: 'them', text: opening }]);
+    setCurrentLine(opening);
     setPhase('speaking');
     setElapsed(0);
 
     if (!muted) {
-      speakTTS(scenario.open, () => {
+      speakTTS(opening, () => {
         setPhase('user-turn');
         opponentFinishTimeRef.current = performance.now();
         userStartedRef.current = false;
@@ -437,7 +517,7 @@ function App() {
         userStartedRef.current = false;
       }, 2000);
     }
-  }, [scenario, burdenBefore, muted, speakTTS]);
+  }, [scenario, burdenBefore, difficulty, muted, speakTTS]);
 
   const recordLatencyIfFirst = useCallback(() => {
     if (!userStartedRef.current && opponentFinishTimeRef.current > 0) {
@@ -473,7 +553,8 @@ function App() {
     setPhase('speaking');
 
     try {
-      const result = await askAI(newMessages, scenario);
+      const currentGoal = scenario.goals[Math.min(completedGoalCount(completedTurns, scenario.goals.length), scenario.goals.length - 1)] || scenario.goals[0];
+      const result = await askAI(newMessages, scenario, difficulty, currentGoal);
       const updated = [...newMessages, { role: 'them' as const, text: result.reply }];
       if (result.coach) updated.push({ role: 'coach' as const, text: '코칭 · ' + result.coach });
       setMessages(updated);
@@ -521,7 +602,7 @@ function App() {
     } finally {
       setBusy(false);
     }
-  }, [scenario, busy, phase, inputText, messages, muted, speakTTS, stopTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
+  }, [scenario, busy, phase, inputText, messages, difficulty, completedTurns, muted, speakTTS, stopTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
 
   const finishRehearsal = useCallback(() => {
     stopTTS();
@@ -559,7 +640,14 @@ function App() {
     setSavedId(null);
     setSaveError(null);
     setConsentTranscript(false);
-  }, [scenario, resourceContext, burdenBefore, burdenAfter, readiness, messages, promptHelpCount, rewriteCount]);
+    if (scenario && messages.some((message) => message.role === 'me')) {
+      setFinalDraftLoading(true);
+      askAIForFinalDraft(scenario, messages, difficulty)
+        .then(setFinalDraft)
+        .catch(() => setFinalDraft(messages.filter((message) => message.role === 'me').slice(-1)[0]?.text || ''))
+        .finally(() => setFinalDraftLoading(false));
+    }
+  }, [scenario, resourceContext, burdenBefore, burdenAfter, readiness, messages, difficulty, promptHelpCount, rewriteCount]);
 
   const reset = useCallback(() => {
     rehearsalIdRef.current = createLocalId();
@@ -580,17 +668,21 @@ function App() {
     setSavedId(null);
     setSaveError(null);
     setConsentTranscript(false);
+    setFinalDraft('');
+    setFinalDraftLoading(false);
     setShowExamples(false);
     setShowRewrite(false);
     setExamples(null);
     setRewrittenText('');
+    difficultyTouchedRef.current = false;
+    setDifficulty(recommendDifficulty(journeyContext.level));
     stopTTS();
     stopSpeech();
     wpmAvgRef.current = [];
     stabilityAvgRef.current = [];
     engagementAvgRef.current = [];
     volumeAvgRef.current = [];
-  }, [stopTTS, stopSpeech]);
+  }, [stopTTS, stopSpeech, journeyContext.level]);
 
   const moveToJourneyStep = useCallback((screen: 'check' | 'micro' | 'connect' | 'record') => {
     stopTTS();
@@ -698,6 +790,8 @@ function App() {
       prompt_help_count: promptHelpCount,
       rewrite_count: rewriteCount,
       selected_next_step: selectedNextStep,
+      difficulty,
+      achieved_goals: scenario.goals.slice(0, goalsCompleted),
       transcript: transcriptData,
       session_token: sessionToken,
     };
@@ -736,6 +830,11 @@ function App() {
   const showResults = isFinished;
   const burdenLabels = ['전혀 부담되지 않아요', '조금 부담돼요', '보통이에요', '많이 부담돼요', '매우 부담돼요'];
   const nextSteps = scenario ? NEXT_STEPS[scenario.id] || (scenario.id.startsWith('resource:') ? NEXT_STEPS.apply : []) : [];
+  const personalizedScenarios = [...SCENARIOS].sort((a, b) =>
+    Number(b.id === recommendedScenarioId) - Number(a.id === recommendedScenarioId));
+  const goalsCompleted = scenario ? completedGoalCount(completedTurns, scenario.goals.length) : 0;
+  const targetTurns = DIFFICULTY_META[difficulty].targetTurns;
+  const sessionFeedback = behaviorFeedback(completedTurns, promptHelpCount, rewriteCount);
 
   return (
     <div className="app" data-mobile-view={!scenario ? 'scenario' : (isSpeaking || isUserTurn ? 'live' : phase)}>
@@ -788,20 +887,23 @@ function App() {
             <>
               <div className="eyebrow">03 — Social Rehearsal</div>
               <h2 className="mid" tabIndex={-1}>어떤 상황을 먼저 연습해볼까요?</h2>
-              <p className="lede">AI가 상대 역할을 맡고, 필요할 때 짧은 문장 도움을 제안해요. 원하는 상황 하나를 선택해 주세요.</p>
+              <p className="lede">자가진단과 선택한 마이크로스텝을 바탕으로 가장 가까운 상황을 먼저 보여드려요. 다른 상황을 골라도 괜찮아요.</p>
+              <div className="personalization-note">
+                <span>지금의 추천 기준</span>
+                <b>Lv.{journeyContext.level} · {journeyContext.microstepText || '현재 상태와 바라는 변화'}</b>
+              </div>
               <div className="scenario-grid">
-                {SCENARIOS.map((s, index) => (
-                  <button key={s.id} className="scenario-card-btn" onClick={() => selectScenario(s)} aria-label={s.title}>
+                {personalizedScenarios.map((s, index) => (
+                  <button key={s.id} className={`scenario-card-btn ${s.id === recommendedScenarioId ? 'recommended' : ''}`} onClick={() => selectScenario(s)} aria-label={s.title}>
                     <span className="sc-icon"><span className="mobile-scenario-number">{String(index + 1).padStart(2, '0')}</span><Mic className="desktop-scenario-icon" size={18} /></span>
                     <span>
-                      <span className="sc-title">{s.title}</span>
+                      <span className="sc-title">{s.title}{s.id === recommendedScenarioId && <em className="recommend-badge">추천</em>}</span>
                       <span className="sc-desc">{s.who}</span>
                     </span>
                   </button>
                 ))}
               </div>
-              <p className="note">카메라와 마이크 분석은 선택 기능이에요. 켜면 상대방을 보며 연습할 수 있고,
-              말 속도·음성 안정도·화면 중앙 유지를 추정해요. 끄고 텍스트로만 대화해도 괜찮아요.</p>
+              <p className="note">카메라와 마이크는 선택 기능이에요. 끄고 텍스트로만 대화해도 괜찮고, 실시간 점수로 평가하지 않아요.</p>
             </>
           )}
 
@@ -827,7 +929,11 @@ function App() {
                 </p>
                 <div className="burden-buttons">
                   {burdenLabels.map((label, i) => (
-                    <button key={i} className={`burden-btn ${burdenBefore === i + 1 ? 'selected' : ''}`} onClick={() => setBurdenBefore(i + 1)} aria-pressed={burdenBefore === i + 1} aria-label={`${i + 1}점 — ${label}`}>
+                    <button key={i} className={`burden-btn ${burdenBefore === i + 1 ? 'selected' : ''}`} onClick={() => {
+                      const burden = i + 1;
+                      setBurdenBefore(burden);
+                      if (!difficultyTouchedRef.current) setDifficulty(recommendDifficulty(journeyContext.level, burden));
+                    }} aria-pressed={burdenBefore === i + 1} aria-label={`${i + 1}점 — ${label}`}>
                       <span className="burden-num">{i + 1}</span>
                       <span className="burden-label">{label}</span>
                     </button>
@@ -836,10 +942,28 @@ function App() {
               </div>
 
               <div className="card">
+                <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 600 }}>어느 정도로 연습할까요?</p>
+                <p style={{ margin: '0 0 12px', fontSize: '13px', color: 'var(--ink-soft)' }}>부담도에 맞춰 추천했어요. 직접 바꿔도 괜찮아요.</p>
+                <div className="difficulty-options">
+                  {(Object.keys(DIFFICULTY_META) as RehearsalDifficulty[]).map((key) => (
+                    <button key={key} className={`difficulty-option ${difficulty === key ? 'selected' : ''}`} onClick={() => { difficultyTouchedRef.current = true; setDifficulty(key); }} aria-pressed={difficulty === key}>
+                      <b>{DIFFICULTY_META[key].label}</b>
+                      <span>{DIFFICULTY_META[key].description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="card rehearsal-goal-card">
+                <p className="goal-card-title">이번 연습의 작은 목표</p>
+                <ol>{scenario.goals.map((goal) => <li key={goal}>{goal}</li>)}</ol>
+              </div>
+
+              <div className="card">
                 <p style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 600 }}>카메라·마이크 분석 (선택)</p>
                 <p style={{ margin: '0 0 10px', fontSize: '13px', color: 'var(--ink-soft)' }}>
-                  카메라를 켜면 상대방을 보며 연습하고, 화면 중앙 유지와 말 속도를 추정해요.
-                  이 데이터는 의학적·심리학적 진단이 아닌 연습 보조용 추정치예요.
+                  카메라를 켜면 상대방을 보며 말하는 환경을 연습할 수 있어요.
+                  숫자로 평가하지 않고, 연습 후 완료한 행동만 부드럽게 알려드려요.
                 </p>
                 <button className={`cam-btn ${cameraOn ? '' : 'off'}`} onClick={() => setCameraOn((v) => !v)}>
                   {cameraOn ? <CameraOff size={14} /> : <Camera size={14} />}
@@ -887,6 +1011,10 @@ function App() {
               <div className="eyebrow">STEP 03 · 진행 중</div>
               <h2 className="mid" tabIndex={-1}>{scenario.title}</h2>
               <p className="mobile-live-lede">AI 상대와 음성 또는 텍스트로 연습해보세요. 필요하면 언제든 문장 도움을 사용할 수 있어요.</p>
+              <div className="live-goal-strip" aria-live="polite">
+                <span>{DIFFICULTY_META[difficulty].label} 연습 · {completedTurns}/{targetTurns}번 대화</span>
+                <b>{completedTurns >= targetTurns ? '목표만큼 연습했어요. 지금 끝내도 충분해요.' : `지금 목표 · ${scenario.goals[Math.min(goalsCompleted, scenario.goals.length - 1)]}`}</b>
+              </div>
 
               <div className="rehearsal-layout">
                 <div>
@@ -917,13 +1045,6 @@ function App() {
                         <div className="camera-overlay">
                           <span className={faceMetrics.centerPresent ? 'active' : ''}><Eye size={11} /> {faceMetrics.centerPresent ? '화면 중앙 유지 추정' : '화면에서 멀어졌어요'}</span>
                           <span className={voiceMetrics.isActive ? 'active' : ''}><Volume2 size={11} /> {voiceMetrics.isActive ? '음성 입력 감지' : '대기'}</span>
-                        </div>
-                      )}
-                      {(isSpeaking || isUserTurn) && cameraOn && (
-                        <div className="live-meters">
-                          <div className="meter-row"><span>말속도</span><div className="meter-bar"><i style={{ width: `${Math.min(100, (liveAverages.wpm / 200) * 100)}%` }} /></div><b>{liveAverages.wpm}</b></div>
-                          <div className="meter-row"><span>안정도</span><div className="meter-bar"><i style={{ width: `${liveAverages.stability}%`, background: '#6F8F80' }} /></div><b>{liveAverages.stability}</b></div>
-                          <div className="meter-row"><span>참여</span><div className="meter-bar"><i style={{ width: `${liveAverages.engagement ?? 0}%`, background: '#6F8F80' }} /></div><b>{liveAverages.engagement ?? '—'}</b></div>
                         </div>
                       )}
                     </div>
@@ -1007,7 +1128,7 @@ function App() {
                 </div>
               </div>
 
-              <p className="note">음성·카메라 지표는 추정치예요. 진단이나 평가에 사용되지 않아요.</p>
+              <p className="note">음성과 카메라는 연습 환경을 돕기 위한 선택 기능이며, 사용자를 점수로 평가하지 않아요.</p>
             </>
           )}
 
@@ -1065,17 +1186,35 @@ function App() {
                   )}
                 </div>
 
-                <div className="card result-mini"><span className="result-label">완료한 대화 턴</span><span className="result-value">{completedTurns}번</span></div>
-                <div className="card result-mini"><span className="result-label">평균 응답 시간</span><span className="result-value">{avgLatency}초</span></div>
+                <div className="card result-mini"><span className="result-label">완료한 작은 목표</span><span className="result-value">{goalsCompleted}/{scenario.goals.length}개</span></div>
+                <div className="card result-mini"><span className="result-label">연습 방식</span><span className="result-value">{DIFFICULTY_META[difficulty].label}</span></div>
                 <div className="card result-mini"><span className="result-label">사용한 도움</span><span className="result-value">예시 {promptHelpCount} · 다듬기 {rewriteCount}</span></div>
               </div>
+
+              <div className="card behavior-feedback-card" style={{ marginTop: 12 }}>
+                <p className="goal-card-title">이번에 해낸 행동</p>
+                <ul>{sessionFeedback.map((item) => <li key={item}><Check size={15} />{item}</li>)}</ul>
+              </div>
+
+              {completedTurns > 0 && (
+                <div className="card final-draft-card" style={{ marginTop: 12 }}>
+                  <p className="goal-card-title">실제로 사용할 수 있는 최종 문장</p>
+                  <p className="final-draft-hint">연습에서 말한 내용을 짧고 자연스럽게 정리했어요. 복사한 뒤 원하는 만큼 고쳐 쓰세요.</p>
+                  {finalDraftLoading ? (
+                    <div className="help-loading"><Loader2 size={16} className="spin-icon" /> 문장을 정리하는 중...</div>
+                  ) : (
+                    <div className="draft-box"><p>{finalDraft || messages.filter((message) => message.role === 'me').slice(-1)[0]?.text}</p></div>
+                  )}
+                  <button className="btn quiet" style={{ marginTop: 10 }} disabled={finalDraftLoading} onClick={() => copyToClipboard(finalDraft || messages.filter((message) => message.role === 'me').slice(-1)[0]?.text || '')}><Copy size={14} /><span>최종 문장 복사하기</span></button>
+                </div>
+              )}
 
               <div className="card" style={{ marginTop: 12 }}>
                 <p style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 600 }}>다음으로 해볼 수 있는 행동이에요</p>
                 <p style={{ margin: '0 0 14px', fontSize: '13px', color: 'var(--ink-soft)' }}>하나만 선택해도 충분해요. 실제 전화나 외부 연락을 자동으로 하지는 않아요.</p>
                 <div className="next-step-list">
                   {nextSteps.map((step) => (
-                    <button key={step.id} className={`next-step-btn ${selectedNextStep === step.id ? 'selected' : ''}`} onClick={() => { setSelectedNextStep(step.id); if (step.id.startsWith('copy-')) { const userMessages = messages.filter((m) => m.role === 'me').map((m) => m.text).join(' '); copyToClipboard(userMessages || '연습한 문장이 여기에 들어가요.'); } if (step.id === 'view-program' && isResourceScenario) returnToResource(); }} aria-pressed={selectedNextStep === step.id}>
+                    <button key={step.id} className={`next-step-btn ${selectedNextStep === step.id ? 'selected' : ''}`} onClick={() => { setSelectedNextStep(step.id); if (step.id.startsWith('copy-')) { const latestLine = messages.filter((m) => m.role === 'me').slice(-1)[0]?.text || ''; copyToClipboard(finalDraft || latestLine || '연습한 문장이 여기에 들어가요.'); } if (step.id === 'view-program' && isResourceScenario) returnToResource(); }} aria-pressed={selectedNextStep === step.id}>
                       <span className="ns-label">{step.label}</span>
                       <span className="ns-desc">{step.description}</span>
                       {selectedNextStep === step.id && <Check size={16} className="ns-check" />}
@@ -1083,16 +1222,6 @@ function App() {
                   ))}
                 </div>
               </div>
-
-              {completedTurns > 0 && (
-                <div className="card" style={{ marginTop: 12 }}>
-                  <p style={{ margin: '0 0 10px', fontSize: '14px', fontWeight: 600 }}>내가 연습에서 쓴 문장</p>
-                  <div className="draft-box">
-                    {messages.filter((m) => m.role === 'me').map((m, i) => (<p key={i} style={{ margin: '0 0 6px' }}>{m.text}</p>))}
-                  </div>
-                  <button className="btn quiet" style={{ marginTop: 10 }} onClick={() => { const userText = messages.filter((m) => m.role === 'me').map((m) => m.text).join('\n'); copyToClipboard(userText); }}><Copy size={14} /><span>복사하기</span></button>
-                </div>
-              )}
 
               <div className="card" style={{ marginTop: 12 }}>
                 <p style={{ margin: '0 0 10px', fontSize: '14px', fontWeight: 600 }}>이번 리허설 기록 저장</p>
