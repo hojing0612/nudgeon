@@ -460,7 +460,7 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   background: #b54a3f;
 }
 .crisis-panel > p { font-size: 16px; line-height: 1.75; }
-.crisis-actions { display: grid; gap: 10px; margin: 22px 0; }
+.crisis-actions { display: grid; gap: 10px; margin: 22px 0 12px; }
 .crisis-call {
   display: flex;
   gap: 12px;
@@ -474,7 +474,11 @@ p.lede { max-width: 780px; margin-bottom: 32px; font-size: 15px; color: var(--in
   text-decoration: none;
 }
 .crisis-call.primary { color: #fff; background: #a8443a; border-color: #a8443a; }
-.crisis-call b { display: inline-block; min-width: 34px; font-size: 18px; }
+.crisis-call span { display: grid; gap: 3px; }
+.crisis-call b { font-size: 17px; }
+.crisis-call small { font-size: 12px; line-height: 1.45; opacity: .88; }
+.crisis-emergency { margin: 0 0 20px; color: var(--ink-soft); font-size: 14px !important; }
+.crisis-emergency a { color: #8d3931; font-weight: 750; text-underline-offset: 2px; }
 .crisis-note { padding-top: 16px; border-top: 1px solid rgba(181, 74, 63, .2); color: var(--ink-soft); font-size: 14px !important; }
 
 @media (max-width: 700px) {
