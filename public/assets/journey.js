@@ -915,11 +915,11 @@ function vMicro(){
   return `
   <div class="eyebrow">02 — Micro Steps</div>
   <h2 class="mid" tabindex="-1">지금 할 수 있는 작은 행동을<br>골라보세요</h2>
-  <p class="lede">자가진단에서 확인한 장벽과 원하는 도움, 현재 Lv를 함께 보고 골랐어요. 마음에 드는 행동을 고른 뒤, 필요하면 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
+  <p class="lede">세 가지는 모두 해야 하는 목록이 아니라 선택지예요. 오늘은 하나만 해도 충분하고, 더 하고 싶다면 여러 개를 이어서 완료해도 괜찮아요. 필요하면 행동을 더 작게 또는 한 단계 높게 조정할 수 있어요.</p>
   <div id="stepList">
     ${list.map((s,i)=>`
       <div class="step-item ${s.done?'done':''} ${state.selectedMicroIndex===i?'selected':''}">
-        <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="완료">${s.done?'✓':''}</button>
+        <button class="tick" data-tick="${i}" aria-pressed="${s.done}" aria-label="${s.done?'완료 선택 취소':'완료'}">${s.done?'✓':''}</button>
         <div><div class="step-text">${s.text}</div>
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
              ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
@@ -961,7 +961,11 @@ function vCompletion(){
       <small>사진은 이 기기에만 저장돼요. 얼굴이나 다른 사람이 나오지 않게 사물만 찍어도 괜찮아요.</small>
       <p class="photo-save-status ${photoSaveStatus.ok===false?'error':''}" aria-live="polite">${escapeHtml(photoSaveStatus.message||'')}</p>
     </div>
-    <button class="btn completion-next" data-go="rehearsal">3단계로 이어가기</button>
+    <div class="completion-navigation">
+      <button class="btn completion-next" data-go="rehearsal">3단계로 이어가기</button>
+      <button class="btn quiet completion-back" data-go="micro">마이크로스텝으로 돌아가기</button>
+    </div>
+    <p class="completion-choice-note">하나만 해도 충분해요. 더 하고 싶다면 돌아가서 다른 행동도 이어서 완료할 수 있어요.</p>
     <button class="text-action" data-pause="1">여기서 잠시 쉬기</button>
   </section>`;
 }
@@ -1069,6 +1073,10 @@ function updateCompletionPhoto(completionId,photoDataUrl){
   else delete item.photoDataUrl;
   item.photoUpdatedAt=new Date().toISOString();
   writeMicrostepHistory(history);
+}
+function removeMicrostepCompletion(completionId){
+  if(!completionId)return;
+  writeMicrostepHistory(microstepHistory().filter(entry=>entry.id!==completionId));
 }
 function imageToPrivateDataUrl(file){
   return new Promise((resolve,reject)=>{
@@ -1261,15 +1269,25 @@ function bind(){
   stage.querySelectorAll('[data-tick]').forEach(b=>b.onclick=()=>{
     const i=+b.dataset.tick,step=state.micro[i];
     const selecting=!step.done;
-    state.micro.forEach((item,index)=>{item.done=selecting&&index===i;item.completedAt=item.done?new Date().toISOString():null});
-    state.selectedMicroIndex=selecting?i:null;
     if(selecting){
+      step.done=true;
+      step.completedAt=new Date().toISOString();
+      state.selectedMicroIndex=i;
       step.completionId=localRecordId();
       try{saveMicrostepCompletion(step);}
       catch(error){console.warn('마이크로스텝 완료 기록 저장 실패:',error);}
       photoSaveStatus={ok:null,message:''};
       if(step.chainId)changeMicrostepPreference(step.chainId,1);
       state.visited.add('micro');state.screen='completion';
+    }else{
+      const completion=microstepHistory().find(item=>item.id===step.completionId);
+      if(completion?.photoDataUrl && !window.confirm('완료 선택을 취소하면 이 행동의 사진 기록도 함께 삭제돼요. 취소할까요?'))return;
+      try{removeMicrostepCompletion(step.completionId);}
+      catch(error){console.warn('마이크로스텝 완료 기록 취소 실패:',error);return;}
+      step.done=false;
+      delete step.completedAt;
+      delete step.completionId;
+      if(state.selectedMicroIndex===i)state.selectedMicroIndex=null;
     }
     render();
   });
