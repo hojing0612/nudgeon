@@ -790,8 +790,6 @@ function App() {
       prompt_help_count: promptHelpCount,
       rewrite_count: rewriteCount,
       selected_next_step: selectedNextStep,
-      difficulty,
-      achieved_goals: scenario.goals.slice(0, goalsCompleted),
       transcript: transcriptData,
       session_token: sessionToken,
     };
