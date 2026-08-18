@@ -89,5 +89,7 @@ test('한 IP가 10분에 30회를 넘으면 요청을 제한한다', () => {
 
 test('허용된 작업 유형만 서버 프롬프트를 만들 수 있다', () => {
   assert.match(buildServerSystem('rehearsal', { scenario: '상담 문의', role: '상담사' }), /상담 문의/);
+  assert.match(buildServerSystem('rehearsal', { difficulty: 'gentle', currentGoal: '첫 문장 말하기' }), /아주 쉬운 연습/);
+  assert.match(buildServerSystem('final-draft', { scenario: '친구에게 답장하기' }), /실제로 전화·문자·메일/);
   assert.equal(buildServerSystem('arbitrary-system', {}), null);
 });
