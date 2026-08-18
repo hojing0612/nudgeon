@@ -140,6 +140,7 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
 }
 .step-item.done{opacity:.5}
 .step-item.done .step-text{text-decoration:line-through}
+.step-item.selected:not(.done){border-color:var(--sage);box-shadow:0 0 0 1px var(--sage)}
 .tick{
   width:22px; height:22px; border-radius:7px; border:1.5px solid var(--line);
   background:#fff; cursor:pointer; padding:0; font-size:13px; color:var(--sage-deep);
@@ -434,6 +435,19 @@ p.lede{max-width:780px;margin-bottom:32px;font-size:15px;color:var(--ink-soft)}
 .home-footer{padding:48px 80px;background:#EFF2EB;color:var(--ink-soft)}
 .home-footer b{display:block;margin-bottom:12px;color:var(--ink);font-size:19px}.home-footer p{max-width:520px;margin:0 0 14px;font-size:13px}.home-footer nav{color:var(--sage-deep);font-size:12px;font-weight:700}.home-footer nav span{padding:0 8px}.home-footer small{display:block;margin-top:14px;font-size:11px}
 .step-mobile-heading{display:none}
+.completion-screen,.return-micro-screen{max-width:720px}
+.completion-screen{text-align:center;margin:0 auto}
+.completion-screen .lede{margin-left:auto;margin-right:auto}
+.completion-card{display:flex;flex-direction:column;align-items:center;gap:16px;margin:28px 0 22px;padding:30px 18px;border:1px solid var(--line);border-radius:20px;background:#fff}
+.completion-card span{display:grid;place-items:center;width:60px;height:60px;border-radius:50%;background:var(--mist);color:var(--sage);font-size:26px;font-weight:700}
+.completion-card b{font-size:20px}.completion-next{width:100%}
+.text-action{display:block;margin:16px auto 0;padding:8px;border:0;background:transparent;color:var(--ink-soft);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.saved-toast{display:flex;align-items:flex-start;gap:10px;margin-bottom:28px;padding:12px 14px;border:1px solid var(--sage);border-radius:14px;background:var(--mist);font-size:13px;font-weight:700}
+.saved-toast b{color:var(--sage);font-size:16px}
+.saved-microstep-card{display:flex;flex-direction:column;align-items:flex-start;gap:14px;margin:22px 0 20px;padding:20px 18px;border:2px solid var(--sage);border-radius:18px;background:#fff}
+.saved-step-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;background:var(--mist);color:var(--sage);font-size:20px}
+.saved-microstep-card p{margin:0;font-size:15px}.saved-microstep-card b{color:var(--amber);font-size:13px}
+.return-actions{display:grid;gap:10px}.return-actions .btn{width:100%}
 
 @media(max-width:1100px){
   .site-header{padding:0 32px}.site-header nav{position:static;transform:none}.journey{gap:14px}.jstep{font-size:12px}
@@ -490,6 +504,21 @@ p.lede{max-width:780px;margin-bottom:32px;font-size:15px;color:var(--ink-soft)}
   .record-layout,.result-grid,.detail-info-grid{grid-template-columns:1fr}
   .app[data-screen="record"] .record-calendar,.app[data-screen="record"] .support-board{display:none}
   .app[data-screen="record"] .day-record{padding:18px;border-radius:18px}
+  .app[data-screen="completion"] .mobile-journey-progress,.app[data-screen="resume"][data-resume-kind="micro"] .mobile-journey-progress{display:none}
+  .app[data-screen="completion"] .workspace .rail,.app[data-screen="resume"][data-resume-kind="micro"] .workspace .rail{padding-top:24px}
+  .completion-screen,.return-micro-screen{max-width:none}
+  .completion-screen{padding-top:0}
+  .completion-screen .eyebrow{margin-bottom:14px;color:var(--sage);text-align:center}
+  .completion-screen h1.big{margin-bottom:18px;font-size:29px;text-align:center}
+  .completion-screen .lede{margin-bottom:0;text-align:center;font-size:14px}
+  .completion-card{margin:24px 0 22px}
+  .completion-next{min-height:52px;border-radius:26px}
+  .return-micro-screen .saved-toast{margin-bottom:22px}
+  .return-micro-screen .eyebrow{margin-bottom:8px}
+  .return-micro-screen h1.big{margin-bottom:8px;font-size:27px;line-height:1.45}
+  .return-micro-screen .lede{margin-bottom:0;font-size:14px}
+  .saved-microstep-card{margin:20px 0}
+  .return-actions .btn{min-height:50px;border-radius:25px}
 
   .app[data-screen="intro"] .site-header{height:64px;min-height:64px}
   .app[data-screen="intro"] .site-header nav{display:none}
