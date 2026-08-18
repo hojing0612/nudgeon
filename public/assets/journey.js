@@ -96,7 +96,7 @@ let MICROSTEP_CHAINS = {
   }
 };
 
-/* 시트가 정상 로드되면 40개 전체를 후보로 사용한다. 실패했을 때만 발표용 체인을 쓴다. */
+/* 시트가 정상 로드되면 활성화된 전체 항목을 후보로 사용한다. 실패했을 때만 발표용 체인을 쓴다. */
 let MICROSTEP_POOL=[];
 let MICROSTEP_DATA_SOURCE='fallback';
 
@@ -506,7 +506,7 @@ function createPersonalizedSteps(regen=false){
   const currentChains=regen?state.micro.map(step=>step.chainId).filter(Boolean):[];
   const recommended=PERSONALIZATION.recommendMicrosteps({
     pool:MICROSTEP_POOL,profile:state.profile,answers:state.answers,
-    avoidChainIds:state.recommendationHistory,hardExcludeChainIds:currentChains,limit:3
+    avoidChainIds:state.recommendationHistory,hardExcludeChainIds:currentChains,limit:5
   });
   const preferences=readMicrostepPreferences();
   const result=recommended.map(base=>{
@@ -1310,7 +1310,7 @@ async function finishCheck(){
 async function loadSteps(regen=false){
   const p=state.profile;
   state.selectedMicroIndex=null;
-  /* 정상 상태에서는 40개 시트 후보를 점수화하고, 시트 실패 때만 발표용 3개를 사용한다. */
+  /* 정상 상태에서는 시트의 전체 후보를 점수화하고, 시트 실패 때만 발표용 3개를 사용한다. */
   if(MICROSTEP_DATA_SOURCE==='sheet'&&MICROSTEP_POOL.length>=3){
     state.micro=createPersonalizedSteps(regen);
   }else if(regen&&state.micro.length>1){
