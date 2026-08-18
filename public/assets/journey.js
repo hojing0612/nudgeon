@@ -613,6 +613,7 @@ function clearProgress(screen='intro'){
   Object.keys(localStorage)
     .filter(key=>key.startsWith('nudgeon.'))
     .forEach(key=>localStorage.removeItem(key));
+  if('indexedDB' in window) indexedDB.deleteDatabase(RECORD_FILES_DB);
   resetState(screen);
   render();
 }
@@ -741,14 +742,6 @@ function renderRail(){
   const p = windowIndex >= 0 ? (windowIndex + 1) / SCREENS.length : 0;
   document.getElementById('appShell')?.setAttribute('data-window-screen', windowScreen || 'intro');
   document.documentElement.style.setProperty('--open', p.toFixed(2));
-  const screenNotes = {
-    check:'조금 열렸어요',
-    micro:'빛이 들어오고 있어요',
-    rehearsal:'저 멀리 작은 다리가 보입니다',
-    connect:'다리 너머 따뜻한 불빛이 켜져 있습니다',
-    record:'길과 다리가 이어진 밝은 풍경이 펼쳐집니다'
-  };
-  document.getElementById('windowNote').textContent = screenNotes[windowScreen] || '커튼은 아직 닫혀 있어요';
   const mobileProgress=document.getElementById('mobileJourneyProgress');
   if(mobileProgress){
     const progressIndex=Math.max(0,windowIndex);
@@ -1039,11 +1032,40 @@ function escapeHtml(value){
 /* ── 05 기록 ── */
 const RECORD_NOTES_KEY='nudgeon.record-notes.v1';
 const REHEARSAL_HISTORY_KEY='nudgeon.rehearsal-history.v1';
+const HABITS_KEY='nudgeon.habits.v1';
+const SAVED_RESOURCES_KEY='nudgeon.saved-resources.v1';
+const CONNECT_FOCUS_KEY='nudgeon.connect-focus-resource.v1';
+const RECORD_FILES_DB='nudgeon-record-files-v1';
 let recordDate=new Date().toISOString().slice(0,10);
 let recordSaveStatus={date:'',ok:null,message:''};
 let photoSaveStatus={ok:null,message:''};
+let recordFileStatus={resourceId:'',ok:null,message:''};
 function recordRead(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback}catch{return fallback}}
 function datePart(value){return typeof value==='string'?value.slice(0,10):''}
+function writeRecordData(key,value){localStorage.setItem(key,JSON.stringify(value))}
+function openRecordFiles(){
+  return new Promise((resolve,reject)=>{
+    const request=indexedDB.open(RECORD_FILES_DB,1);
+    request.onupgradeneeded=()=>request.result.createObjectStore('files',{keyPath:'resourceId'});
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  });
+}
+async function storePolicyFile(resourceId,file){
+  const db=await openRecordFiles();
+  await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').put({resourceId,name:file.name,type:file.type,size:file.size,updatedAt:new Date().toISOString(),blob:file});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+  db.close();
+}
+async function readPolicyFile(resourceId){
+  const db=await openRecordFiles();
+  const value=await new Promise((resolve,reject)=>{const request=db.transaction('files').objectStore('files').get(resourceId);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});
+  db.close();return value;
+}
+async function deletePolicyFile(resourceId){
+  const db=await openRecordFiles();
+  await new Promise((resolve,reject)=>{const tx=db.transaction('files','readwrite');tx.objectStore('files').delete(resourceId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});
+  db.close();
+}
 function localRecordId(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`}
 function microstepHistory(){
   const value=recordRead(MICROSTEP_HISTORY_KEY,[]);
@@ -1098,23 +1120,24 @@ function imageToPrivateDataUrl(file){
     image.src=url;
   });
 }
-function monthCalendar(selected,activityDates){
+function monthCalendar(selected,activityDates,habitDates){
   const date=new Date(`${selected}T12:00:00`),year=date.getFullYear(),month=date.getMonth();
   const first=new Date(year,month,1),last=new Date(year,month+1,0),today=new Date().toISOString().slice(0,10);
   const cells=Array(first.getDay()).fill('<span></span>');
   for(let day=1;day<=last.getDate();day++){
     const key=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today ':''}${activityDates.has(key)?'has-activity':''}">${day}</button>`);
+    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today ':''}${activityDates.has(key)?'has-activity ':''}${habitDates.has(key)?'has-habit':''}" aria-label="${key}${habitDates.has(key)?', 습관 완료':''}">${day}</button>`);
   }
   return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div>`;
 }
 
 function vRecord(){
-  const saved=Object.values(recordRead('nudgeon.saved-resources.v1',{}));
+  const saved=Object.values(recordRead(SAVED_RESOURCES_KEY,{}));
   const history=recordRead(REHEARSAL_HISTORY_KEY,[]);
   const legacyRehearsal=recordRead('nudgeon.rehearsal-summary.v1',null);
   const rehearsals=history.length?history:(legacyRehearsal?[legacyRehearsal]:[]);
   const notes=recordRead(RECORD_NOTES_KEY,{});
+  const habits=recordRead(HABITS_KEY,[]);
   const completionHistory=microstepHistory();
   const legacyCompletions=state.micro.filter(step=>step.completedAt&&!completionHistory.some(item=>item.id===step.completionId));
   const completions=[...completionHistory,...legacyCompletions.map(step=>({id:step.completionId||step.stepId||step.completedAt,title:step.text,completedAt:step.completedAt}))];
@@ -1124,14 +1147,14 @@ function vRecord(){
   const stages=[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']];
   const stageLabels={preparing:'준비 중',waiting:'결과 기다리는 중',completed:'완료'};
   const normalizedStage=item=>({interested:'preparing',checking:'preparing',documents:'preparing',applied:'waiting'}[item.stage]||item.stage||'preparing');
-  const activities=[];
-  dayCompletions.forEach(step=>activities.push(`마이크로스텝 완료 · ${step.title}`));
+  const activityGroups={micro:[],rehearsal:[],connect:[]};
+  dayCompletions.forEach(step=>activityGroups.micro.push(step.title));
   rehearsals.filter(item=>datePart(item.savedAt)===recordDate)
-    .forEach(item=>activities.push(`사회적 리허설 ${item.completedTurns||0}턴 · ${item.scenarioTitle||'상황 연습'}`));
+    .forEach(item=>activityGroups.rehearsal.push(`${item.scenarioTitle||'상황 연습'} · ${item.completedTurns||0}턴`));
   saved.filter(item=>datePart(item.savedAt)===recordDate)
-    .forEach(item=>activities.push(`지원 저장 · ${item.resource?.title||'지원'}`));
+    .forEach(item=>activityGroups.connect.push(`저장 · ${item.resource?.title||'지원'}`));
   saved.forEach(item=>(item.stageHistory||[]).filter(event=>datePart(event.changedAt)===recordDate)
-    .forEach(event=>activities.push(`지원 상태 변경 · ${item.resource?.title||'지원'} → ${stageLabels[event.stage]||event.stage}`)));
+    .forEach(event=>activityGroups.connect.push(`${item.resource?.title||'지원'} → ${stageLabels[event.stage]||event.stage}`)));
   const activityDates=new Set([
     ...completions.map(step=>datePart(step.completedAt)),
     ...rehearsals.map(item=>datePart(item.savedAt)),
@@ -1139,16 +1162,22 @@ function vRecord(){
     ...saved.flatMap(item=>(item.stageHistory||[]).map(event=>datePart(event.changedAt))),
     ...Object.keys(notes)
   ].filter(Boolean));
+  const habitDates=new Set(habits.flatMap(habit=>habit.completedDates||[]));
+  const groupInfo=[['rehearsal','사회적 리허설','03'],['micro','마이크로스텝','02'],['connect','공공복지 연결','04']];
+  const activityHtml=groupInfo.map(([key,label,number])=>`<section class="day-activity-group activity-${key}"><div class="day-activity-head"><span>${number}</span><b>${label}</b><small>${activityGroups[key].length}</small></div>${activityGroups[key].length?`<div>${activityGroups[key].map(item=>`<p>${escapeHtml(item)}</p>`).join('')}</div>`:'<p class="muted">기록 없음</p>'}</section>`).join('');
+  const habitHtml=habits.map(habit=>`<div class="habit-row"><label><input type="checkbox" data-habit-toggle="${escapeHtml(habit.id)}" ${(habit.completedDates||[]).includes(recordDate)?'checked':''}><span>${escapeHtml(habit.name)}</span></label><button type="button" data-delete-habit="${escapeHtml(habit.id)}" aria-label="${escapeHtml(habit.name)} 삭제">삭제</button></div>`).join('')||'<p class="habit-empty">아직 등록한 습관이 없어요. 아주 작은 행동부터 적어보세요.</p>';
+  const supportCard=item=>{const resource=item.resource||{},resourceId=resource.id||item.id||'',stageName=normalizedStage(item),canOpen=stageName==='preparing'||stageName==='waiting',file=item.fileMeta;return `<article class="support-policy-card"><div class="support-policy-main">${canOpen?`<button type="button" data-open-resource="${escapeHtml(resourceId)}"><b>${escapeHtml(resource.title||'저장한 지원')}</b><span>${escapeHtml(resource.organization||'')}</span>${resource.endsAt?`<small>${escapeHtml(String(resource.endsAt).slice(0,10))} 마감</small>`:''}<em>신청 준비 이어가기 →</em></button>`:`<div><b>${escapeHtml(resource.title||'저장한 지원')}</b><span>${escapeHtml(resource.organization||'')}</span></div>`}</div><div class="policy-file-box">${file?`<span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span><div><button type="button" data-download-policy-file="${escapeHtml(resourceId)}">열기</button><button type="button" data-remove-policy-file="${escapeHtml(resourceId)}">삭제</button></div>`:`<label><input type="file" accept="application/pdf,.pdf" data-policy-file="${escapeHtml(resourceId)}"><span>+ 지원서 PDF 보관</span></label>`}<small>이 기기에만 저장돼요.</small>${recordFileStatus.resourceId===resourceId?`<p class="${recordFileStatus.ok===false?'error':''}">${escapeHtml(recordFileStatus.message)}</p>`:''}</div></article>`};
   return `
   <div class="eyebrow">05 — Record</div>
   <h2 class="mid" tabindex="-1">지금까지의 기록을<br>확인해보세요</h2>
   <p class="lede">완료한 단계와 선택한 행동을 한눈에 보고, 다음에 이어갈 곳을 정할 수 있어요.</p>
-  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>한 일</h3><div class="day-activities">${activities.map(x=>`<p>✓ ${escapeHtml(x)}</p>`).join('')||'<p class="muted">아직 기록된 활동이 없어요.</p>'}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
+  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates,habitDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>오늘의 연결</h3><div class="day-activities">${activityHtml}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
+  <section class="habit-tracker card"><div class="record-section-head"><div><h3>나의 작은 습관</h3><p>${recordDate}에 실천했다면 체크해보세요.</p></div><span>${habits.length}개</span></div><form class="habit-form" data-add-habit><input id="habitName" maxlength="40" placeholder="예: 창문 열고 물 한 잔 마시기" aria-label="새 습관"><button class="btn quiet" type="submit">습관 추가</button></form><div class="habit-list">${habitHtml}</div><p class="habit-guide">하루를 놓쳐도 괜찮아요. 달력의 연한 초록색은 습관을 실천한 날이에요.</p></section>
   <section class="change-records">
     <div class="record-section-head"><div><h3>작은 변화 기록</h3><p>2단계에서 사진으로 남긴 행동을 이곳에서 다시 볼 수 있어요.</p></div><span>사진 ${completions.filter(item=>item.photoDataUrl).length}장</span></div>
     ${dayPhotos.length?`<div class="change-photo-grid">${dayPhotos.map(item=>`<article class="change-photo-card"><img src="${item.photoDataUrl}" alt="${escapeHtml(item.title)} 기록 사진"><div><time>${escapeHtml(datePart(item.completedAt))}</time><b>${escapeHtml(item.title)}</b><button type="button" data-delete-record-photo="${escapeHtml(item.id)}">사진 삭제</button></div></article>`).join('')}</div>`:'<div class="change-record-empty">이 날짜에는 사진 기록이 없어요. 사진 없이 완료한 행동도 위의 ‘한 일’에 그대로 기록됩니다.</div>'}
   </section>
-  <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(item=>`<article><b>${escapeHtml(item.resource?.title||'저장한 지원')}</b><span>${escapeHtml(item.resource?.organization||'')}</span>${item.resource?.endsAt?`<small>${escapeHtml(String(item.resource.endsAt).slice(0,10))} 마감</small>`:''}</article>`).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
+  <section class="support-board"><div class="record-section-head"><h3>지원 현황</h3><span>${saved.length}개</span></div><div class="support-columns">${stages.map(([key,label])=>`<div class="support-column"><h4>${label}</h4>${saved.filter(item=>normalizedStage(item)===key).map(supportCard).join('')||'<p>아직 없어요</p>'}</div>`).join('')}</div></section>`;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1189,6 +1218,16 @@ function bind(){
     }
     render();
   });
+  stage.querySelector('[data-add-habit]')?.addEventListener('submit',event=>{
+    event.preventDefault();const input=document.getElementById('habitName'),name=(input?.value||'').trim();if(!name)return;
+    const habits=recordRead(HABITS_KEY,[]);habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});writeRecordData(HABITS_KEY,habits);render();
+  });
+  stage.querySelectorAll('[data-habit-toggle]').forEach(input=>input.onchange=()=>{const habits=recordRead(HABITS_KEY,[]),habit=habits.find(item=>item.id===input.dataset.habitToggle);if(!habit)return;const dates=new Set(habit.completedDates||[]);input.checked?dates.add(recordDate):dates.delete(recordDate);habit.completedDates=[...dates].sort();writeRecordData(HABITS_KEY,habits);render()});
+  stage.querySelectorAll('[data-delete-habit]').forEach(button=>button.onclick=()=>{const habits=recordRead(HABITS_KEY,[]).filter(item=>item.id!==button.dataset.deleteHabit);writeRecordData(HABITS_KEY,habits);render()});
+  stage.querySelectorAll('[data-open-resource]').forEach(button=>button.onclick=()=>{localStorage.setItem(CONNECT_FOCUS_KEY,JSON.stringify(button.dataset.openResource));state.screen='connect';render()});
+  stage.querySelectorAll('[data-policy-file]').forEach(input=>input.onchange=async()=>{const file=input.files?.[0],resourceId=input.dataset.policyFile;if(!file)return;if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){recordFileStatus={resourceId,ok:false,message:'PDF 파일만 저장할 수 있어요.'};render();return}if(file.size>10*1024*1024){recordFileStatus={resourceId,ok:false,message:'10MB 이하 PDF를 선택해 주세요.'};render();return}try{await storePolicyFile(resourceId,file);const all=recordRead(SAVED_RESOURCES_KEY,{});if(all[resourceId])all[resourceId].fileMeta={name:file.name,size:file.size,updatedAt:new Date().toISOString()};writeRecordData(SAVED_RESOURCES_KEY,all);recordFileStatus={resourceId,ok:true,message:'PDF를 이 기기에 저장했어요.'}}catch(error){console.warn('PDF 저장 실패:',error);recordFileStatus={resourceId,ok:false,message:'PDF를 저장하지 못했어요.'}}render()});
+  stage.querySelectorAll('[data-download-policy-file]').forEach(button=>button.onclick=async()=>{const resourceId=button.dataset.downloadPolicyFile;try{const file=await readPolicyFile(resourceId);if(!file?.blob)throw new Error('파일 없음');const link=document.createElement('a'),objectUrl=URL.createObjectURL(file.blob);link.href=objectUrl;link.download=file.name||'지원서.pdf';link.click();setTimeout(()=>URL.revokeObjectURL(objectUrl),1000)}catch{recordFileStatus={resourceId,ok:false,message:'저장된 PDF를 열지 못했어요.'};render()}});
+  stage.querySelectorAll('[data-remove-policy-file]').forEach(button=>button.onclick=async()=>{const resourceId=button.dataset.removePolicyFile;try{await deletePolicyFile(resourceId);const all=recordRead(SAVED_RESOURCES_KEY,{});if(all[resourceId])delete all[resourceId].fileMeta;writeRecordData(SAVED_RESOURCES_KEY,all);recordFileStatus={resourceId,ok:true,message:'PDF를 삭제했어요.'}}catch{recordFileStatus={resourceId,ok:false,message:'PDF를 삭제하지 못했어요.'}}render()});
   stage.querySelector('[data-add-micro-photo]')?.addEventListener('click',()=>{
     document.getElementById('microPhotoInput')?.click();
   });

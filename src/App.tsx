@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft,
   Camera,
   CameraOff,
   Check,
@@ -701,37 +700,6 @@ function App() {
 
   const isResourceScenario = Boolean(resourceContext && scenario?.id === resourceContext.scenario.id);
 
-  const goToPreviousStep = useCallback(() => {
-    if (!scenario || phase === 'idle') {
-      window.location.href = '/home.html?screen=micro';
-      return;
-    }
-    if (phase === 'prep') {
-      if (isResourceScenario) {
-        returnToResource();
-        return;
-      }
-      reset();
-      return;
-    }
-    if (phase === 'speaking' || phase === 'user-turn') {
-      if (!window.confirm('현재 대화는 자동 저장되지 않아요. 상황 선택으로 돌아갈까요?')) return;
-      reset();
-      return;
-    }
-    if (phase === 'safety') {
-      reset();
-      return;
-    }
-    if (phase === 'post-burden') {
-      setPhase('user-turn');
-      return;
-    }
-    if (phase === 'finished') {
-      setPhase('post-burden');
-    }
-  }, [scenario, phase, reset, isResourceScenario, returnToResource]);
-
   const handleGetExamples = useCallback(async () => {
     if (!scenario) return;
     setShowExamples(true);
@@ -872,15 +840,11 @@ function App() {
               </div>
             </div>
           </div>
-            <div className="window-note">{scenario ? '저 멀리 작은 다리가 보여요' : '빛이 조금씩 들어오고 있어요'}</div>
           </div>
         </aside>
 
         <main className="stage">
         <div className="col">
-          <button className="back-home" type="button" onClick={goToPreviousStep} aria-label="이전 단계로 돌아가기">
-            <ArrowLeft size={14} /> 이전 단계
-          </button>
           {!scenario && (
             <>
               <div className="eyebrow">03 — Social Rehearsal</div>
