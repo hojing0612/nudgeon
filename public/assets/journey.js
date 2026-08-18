@@ -637,7 +637,7 @@ function selectedMicrostep(){
 /* ═══════════════════════════════════════════════════════════
    6. AI 호출 — 실패해도 앱이 멈추지 않게 항상 대비책을 둔다
    ═══════════════════════════════════════════════════════════ */
-async function ask(messages, system){
+async function ask(messages, task, context={}){
   /* Anthropic이 아니라 '우리 백엔드'(api/chat.js)를 부른다.
      API 키는 저쪽에서 붙는다. 이 파일에는 키가 한 글자도 없다.
      주의: 파일을 그냥 더블클릭해서 열면 /api/chat 이 없어서 실패한다.
@@ -645,7 +645,7 @@ async function ask(messages, system){
   const res = await fetch('/api/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ messages, system })
+    body:JSON.stringify({ messages, task, context })
   });
   if(!res.ok) throw new Error('API ' + res.status);
   const data = await res.json();
@@ -1292,11 +1292,8 @@ async function finishCheck(){
         `주요 장벽: ${state.profile.barrierLabel}\n`+
         `1년 뒤 바람: ${state.profile.vision}\n`+
         `이 사람에게 2~3문장으로 리포트를 써줘.`}],
-      `너는 고립·은둔 청년을 돕는 서비스의 진단 리포트 작성자다.
-규칙: 진단명·병명을 쓰지 않는다. 격려나 응원 문구를 쓰지 않는다.
-"괜찮아요","할 수 있어요" 같은 말은 금지. 지금 상태를 담담하게 서술하고,
-왜 이 장벽 때문에 멈추는지를 설명하고, 그래서 어떤 크기의 행동부터 시작할지를 말한다.
-반말 금지, 존댓말. 2~3문장. 다른 말 없이 리포트만 출력.`);
+      'assessment-report',
+      {level:`Lv.${state.profile.level} ${state.profile.levelName}`,barrier:state.profile.barrierLabel,vision:state.profile.vision});
     if(state.profile !== reportProfile) return;
     state.report = generatedReport;
   }catch(e){
@@ -1372,13 +1369,10 @@ async function send(){
   try{
     const history = state.messages.filter(m=>m.role!=='coach').map(m=>({
       role: m.role==='me' ? 'user' : 'assistant', content:m.text }));
-    const txt = await ask(history,
-      `너는 사회적 리허설 상대다. 역할: ${sc.who}. 상황: ${sc.title}.
-상대는 오래 사람을 만나지 않은 청년이다. 절대 냉담하거나 무례하지 않다.
-말투는 현실적이되 따뜻하고, 2~3문장으로 짧게. 실제로 그 사람이 할 법한 대화만 한다.
-그리고 마지막에 한 줄, 사용자에게 주는 짧은 코칭을 붙인다.
-형식: 대화 내용 → 줄바꿈 → "COACH: 코칭 한 문장"`);
-    const [reply, coach] = txt.split(/COACH\s*:/);
+    const txt = await ask(history,'rehearsal',{scenario:sc.title,role:sc.who});
+    let reply=txt,coach='';
+    try{const parsed=JSON.parse(txt);reply=parsed.reply||txt;coach=parsed.coach||'';}
+    catch{[reply,coach='']=txt.split(/COACH\s*:/);}
     state.messages.push({role:'them', text:reply.trim()});
     if(coach) state.messages.push({role:'coach', text:'코칭 · ' + coach.trim()});
   }catch(e){
@@ -1398,9 +1392,8 @@ async function makeDraft(){
       [{role:'user',content:
         `Lv.${p.level} ${p.levelName}, 장벽 ${p.barrierLabel}, 바람 ${p.vision}인 청년이
 상담센터에 처음 보낼 문의 메시지를 써줘.`}],
-      `한국 대학·청년기관에 처음 문의하는 메시지를 대신 쓴다.
-규칙: 3~4문장. 과하게 사정을 설명하지 않는다. 사과로 시작하지 않는다.
-"늦어서 죄송하지만" 같은 표현 금지. 담담하고 짧게. 메시지 본문만 출력.`);
+      'contact-draft',
+      {level:`Lv.${p.level} ${p.levelName}`,barrier:p.barrierLabel,vision:p.vision});
   }catch(e){
     state.draft = '안녕하세요. 상담을 신청하고 싶어 연락드립니다.\n요즘 밖에 나가거나 사람을 만나는 게 어려워서, 어디서부터 도움을 받으면 좋을지 알고 싶습니다.\n첫 상담은 어떻게 진행되는지 알려주실 수 있을까요?';
   }

@@ -11,10 +11,12 @@ import {
   Mic,
   MicOff,
   PenLine,
+  Phone,
   Play,
   RotateCcw,
   Save,
   Send,
+  ShieldAlert,
   Volume2,
 } from 'lucide-react';
 import { useVoiceAnalysis } from '@/hooks/useVoiceAnalysis';
@@ -27,7 +29,7 @@ import type { Scenario, ChatMessage } from '@/data/opponents';
 import { OpponentPanel } from '@/components/OpponentPanel';
 import { DialogueTranscript } from '@/components/DialogueTranscript';
 
-type Phase = 'idle' | 'prep' | 'speaking' | 'user-turn' | 'post-burden' | 'finished';
+type Phase = 'idle' | 'prep' | 'speaking' | 'user-turn' | 'safety' | 'post-burden' | 'finished';
 type Readiness = 'hard' | 'small' | 'now' | null;
 const REHEARSAL_SUMMARY_KEY = 'nudgeon.rehearsal-summary.v1';
 const REHEARSAL_PROGRESS_KEY = 'nudgeon.rehearsal-progress.v1';
@@ -80,6 +82,18 @@ function fallbackExamplesFor(scenarioId: string) {
   return FALLBACK_EXAMPLES[scenarioId] || (scenarioId.startsWith('resource:') ? FALLBACK_EXAMPLES.apply : FALLBACK_EXAMPLES.center);
 }
 
+const CRISIS_PATTERNS = [
+  /자살/, /자해/, /죽고\s*싶/, /죽어\s*버리/, /살기\s*싫/,
+  /목숨을?\s*(?:끊|버리)/, /내\s*삶을?\s*끝내/, /나를?\s*해치/,
+  /사라지고\s*싶/, /없어지고\s*싶/, /유서/
+];
+
+function containsCrisisLanguage(text: string) {
+  return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const SAFETY_REPLY = '지금은 역할극을 계속하기보다 즉시 사람의 도움을 받는 것이 먼저예요. 당장 자신이나 다른 사람을 해칠 가능성이 있다면 112 또는 119에 전화하고, 자살예방 상담전화 109에서도 24시간 상담받을 수 있어요.';
+
 type RehearsalProgress = {
   scenarioId: string | null;
   phase: Phase;
@@ -95,7 +109,7 @@ type RehearsalProgress = {
 function loadRehearsalProgress(): RehearsalProgress | null {
   try {
     const saved = JSON.parse(localStorage.getItem(REHEARSAL_PROGRESS_KEY) || 'null');
-    if (!saved || !['idle', 'prep', 'speaking', 'user-turn', 'post-burden', 'finished'].includes(saved.phase)) return null;
+    if (!saved || !['idle', 'prep', 'speaking', 'user-turn', 'safety', 'post-burden', 'finished'].includes(saved.phase)) return null;
     return {
       scenarioId: typeof saved.scenarioId === 'string' ? saved.scenarioId : null,
       // 대화 원문을 저장하지 않으므로 진행 중이던 역할극은 준비 화면에서 다시 시작해요.
@@ -145,23 +159,6 @@ function parseAIResponse(text: string): AISafetyCheck {
   };
 }
 
-function buildSystemPrompt(scenario: Scenario): string {
-  return `너는 사회적 리허설 상대다. 역할: ${scenario.who}. 상황: ${scenario.title}.
-
-규칙:
-- 사용자의 실제 답변에 반응할 것. 매번 불필요한 칭찬을 하지 말 것.
-- 현실적이고 따뜻한 1~3문장으로 답할 것.
-- 한 번에 질문을 하나만 할 것.
-- 사용자를 압박하거나 죄책감을 주지 말 것.
-- 위기상황이나 자해·타해 표현이 감지되면 역할극을 계속하지 말고 즉각적인 안전 도움을 권할 것.
-
-출력 형식 (반드시 JSON):
-{"reply": "상대방이 할 대화 내용", "coach": "사용자를 위한 짧은 코칭 한 문장", "safety": false}
-
-safety 필드는 자해·타해 표현이 감지되면 true로 설정하고 reply에 안전 도움 안내를 넣을 것.
-코칭은 칭찬이 아니라 구체적인 관찰이나 제안이어야 한다.`;
-}
-
 async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<AISafetyCheck> {
   const history = messages
     .filter((m) => m.role !== 'coach')
@@ -172,13 +169,15 @@ async function askAI(messages: ChatMessage[], scenario: Scenario): Promise<AISaf
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: history,
-      system: buildSystemPrompt(scenario),
+      task: 'rehearsal',
+      context: { scenario: scenario.title, role: scenario.who },
     }),
   });
 
   if (!res.ok) throw new Error('API ' + res.status);
   const data = await res.json();
-  return parseAIResponse(data.text || '');
+  const parsed = parseAIResponse(data.text || '');
+  return { ...parsed, isSafety: data.safety === true || parsed.isSafety };
 }
 
 async function askAIForExamples(scenario: Scenario, messages: ChatMessage[]): Promise<{ minimal: string; normal: string; honest: string }> {
@@ -189,14 +188,8 @@ async function askAIForExamples(scenario: Scenario, messages: ChatMessage[]): Pr
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: [{ role: 'user', content: `상황: ${scenario.title}\n역할: ${scenario.who}\n지금까지 대화:\n${context}\n\n사용자가 무슨 말부터 할지 모르겠다고 했어. 사용자가 선택할 수 있는 답변 예시 3개를 만들어줘.` }],
-      system: `너는 사회적 리허설 도우미다. 사용자가 말문이 막혔을 때 선택할 수 있는 답변 예시 3개를 만든다.
-3개는 서로 다른 부담 수준이어야 한다:
-1. 최소 표현: 한 문장으로 간단하게
-2. 보통 표현: 상황을 조금 설명
-3. 솔직한 표현: 현재 어려움을 포함
-
-반드시 JSON 형식으로 출력:
-{"minimal": "최소 표현 문장", "normal": "보통 표현 문장", "honest": "솔직한 표현 문장"}`,
+      task: 'examples',
+      context: { scenario: scenario.title, role: scenario.who },
     }),
   });
 
@@ -228,14 +221,8 @@ async function askAIForRewrite(scenario: Scenario, userText: string): Promise<st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: [{ role: 'user', content: `사용자가 작성한 문장: "${userText}"\n상황: ${scenario.title}\n이 문장을 다듬어줘.` }],
-      system: `너는 문장 다듬기 도우미다. 사용자의 문장을 다음 기준으로 수정한다:
-- 짧고 명확한 표현
-- 지나친 자기비난 제거
-- 상대방에게 요구하는 행동이 분명한 문장
-- 과하게 긍정적이거나 인위적인 표현 금지
-- 원래 의미를 바꾸지 않기
-
-JSON 형식으로 출력: {"rewritten": "다듬어진 문장"}`,
+      task: 'rewrite',
+      context: { scenario: scenario.title, role: scenario.who },
     }),
   });
 
@@ -472,6 +459,16 @@ function App() {
 
     const newMessages = [...messages, { role: 'me' as const, text }];
     setMessages(newMessages);
+
+    if (containsCrisisLanguage(text)) {
+      stopTTS();
+      setCameraOn(false);
+      setMessages([...newMessages, { role: 'them', text: SAFETY_REPLY }]);
+      setCurrentLine(SAFETY_REPLY);
+      setPhase('safety');
+      return;
+    }
+
     setBusy(true);
     setPhase('speaking');
 
@@ -481,6 +478,14 @@ function App() {
       if (result.coach) updated.push({ role: 'coach' as const, text: '코칭 · ' + result.coach });
       setMessages(updated);
       setCurrentLine(result.reply);
+
+      if (result.isSafety) {
+        stopTTS();
+        stopSpeech();
+        setCameraOn(false);
+        setPhase('safety');
+        return;
+      }
 
       if (!muted) {
         speakTTS(result.reply, () => {
@@ -516,7 +521,7 @@ function App() {
     } finally {
       setBusy(false);
     }
-  }, [scenario, busy, phase, inputText, messages, muted, speakTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
+  }, [scenario, busy, phase, inputText, messages, muted, speakTTS, stopTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
 
   const finishRehearsal = useCallback(() => {
     stopTTS();
@@ -622,6 +627,10 @@ function App() {
       reset();
       return;
     }
+    if (phase === 'safety') {
+      reset();
+      return;
+    }
     if (phase === 'post-burden') {
       setPhase('user-turn');
       return;
@@ -721,6 +730,7 @@ function App() {
   const isPrep = phase === 'prep';
   const isSpeaking = phase === 'speaking';
   const isUserTurn = phase === 'user-turn';
+  const isSafety = phase === 'safety';
   const isPostBurden = phase === 'post-burden';
   const isFinished = phase === 'finished';
   const showResults = isFinished;
@@ -845,6 +855,29 @@ function App() {
                 <button className="btn quiet" onClick={reset}>다른 상황 고르기</button>
               </div>
             </>
+          )}
+
+          {scenario && isSafety && (
+            <section className="crisis-panel" role="alert" aria-live="assertive">
+              <div className="crisis-heading">
+                <span className="crisis-icon" aria-hidden="true"><ShieldAlert size={24} /></span>
+                <div>
+                  <div className="eyebrow">지금은 안전이 먼저예요</div>
+                  <h2 className="mid" tabIndex={-1}>역할극을 잠시 멈췄어요</h2>
+                </div>
+              </div>
+              <p>{SAFETY_REPLY}</p>
+              <div className="crisis-actions">
+                <a className="crisis-call primary" href="tel:109"><Phone size={17} /><span><b>109</b> 자살예방 상담전화 · 24시간</span></a>
+                <a className="crisis-call" href="tel:112"><Phone size={17} /><span><b>112</b> 즉각적인 범죄·신변 위험</span></a>
+                <a className="crisis-call" href="tel:119"><Phone size={17} /><span><b>119</b> 응급 구조·구급</span></a>
+              </div>
+              <p className="crisis-note">전화하기 어렵다면 가까운 사람에게 “지금 혼자 있으면 위험할 것 같아요”라고 그대로 보여주세요. NudgeOn은 응급기관이나 전문 상담을 대신하지 않습니다.</p>
+              <div className="row">
+                <button className="btn quiet" onClick={reset}>상황 선택으로 돌아가기</button>
+                <a className="btn" href="/home.html">NudgeOn 나가기</a>
+              </div>
+            </section>
           )}
 
           {scenario && (isSpeaking || isUserTurn) && (
