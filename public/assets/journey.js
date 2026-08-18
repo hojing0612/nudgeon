@@ -1120,15 +1120,17 @@ function imageToPrivateDataUrl(file){
     image.src=url;
   });
 }
-function monthCalendar(selected,activityDates,habitDates){
+function monthCalendar(selected,activityDates,habitProgress){
   const date=new Date(`${selected}T12:00:00`),year=date.getFullYear(),month=date.getMonth();
   const first=new Date(year,month,1),last=new Date(year,month+1,0),today=new Date().toISOString().slice(0,10);
   const cells=Array(first.getDay()).fill('<span></span>');
   for(let day=1;day<=last.getDate();day++){
     const key=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today ':''}${activityDates.has(key)?'has-activity ':''}${habitDates.has(key)?'has-habit':''}" aria-label="${key}${habitDates.has(key)?', 습관 완료':''}">${day}</button>`);
+    const progress=habitProgress.get(key)||0;
+    const level=progress===100?5:progress>=76?4:progress>=51?3:progress>=26?2:progress>0?1:0;
+    cells.push(`<button data-record-date="${key}" class="${key===selected?'selected ':''}${key===today?'today ':''}${activityDates.has(key)?'has-activity ':''}${level?`habit-level-${level}`:''}" aria-label="${key}${progress?`, 습관 ${progress}% 완료`:''}">${day}</button>`);
   }
-  return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div>`;
+  return `<div class="calendar-head"><button data-record-month="-1">‹</button><b>${year}년 ${month+1}월</b><button data-record-month="1">›</button></div><div class="calendar-week"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div><div class="calendar-days">${cells.join('')}</div><div class="habit-calendar-legend"><span>습관 달성률</span><i class="habit-level-1"></i><i class="habit-level-2"></i><i class="habit-level-3"></i><i class="habit-level-4"></i><i class="habit-level-5"></i><b>100%</b></div>`;
 }
 
 function vRecord(){
@@ -1162,17 +1164,30 @@ function vRecord(){
     ...saved.flatMap(item=>(item.stageHistory||[]).map(event=>datePart(event.changedAt))),
     ...Object.keys(notes)
   ].filter(Boolean));
-  const habitDates=new Set(habits.flatMap(habit=>habit.completedDates||[]));
+  const habitProgress=new Map();
+  if(habits.length){
+    const completedDates=new Set(habits.flatMap(habit=>habit.completedDates||[]));
+    completedDates.forEach(date=>{
+      const completed=habits.filter(habit=>(habit.completedDates||[]).includes(date)).length;
+      habitProgress.set(date,Math.round(completed/habits.length*100));
+    });
+  }
   const groupInfo=[['rehearsal','사회적 리허설','03'],['micro','마이크로스텝','02'],['connect','공공복지 연결','04']];
   const activityHtml=groupInfo.map(([key,label,number])=>`<section class="day-activity-group activity-${key}"><div class="day-activity-head"><span>${number}</span><b>${label}</b><small>${activityGroups[key].length}</small></div>${activityGroups[key].length?`<div>${activityGroups[key].map(item=>`<p>${escapeHtml(item)}</p>`).join('')}</div>`:'<p class="muted">기록 없음</p>'}</section>`).join('');
+  const habitTitles=new Set(habits.map(habit=>habit.name.trim().toLowerCase()));
+  const habitSuggestions=[...state.micro.map(step=>step.text),...completionHistory.slice().reverse().map(item=>item.title)]
+    .filter(Boolean).filter((title,index,items)=>items.indexOf(title)===index&&!habitTitles.has(title.trim().toLowerCase())).slice(0,3);
+  const recommendationHtml=habitSuggestions.length?`<div class="habit-recommendations"><div><b>마이크로스텝에서 이어가기</b><span>매일 해보고 싶은 행동을 습관으로 추가해보세요.</span></div><div>${habitSuggestions.map(title=>`<button type="button" data-add-suggested-habit="${escapeHtml(title)}"><span>${escapeHtml(title)}</span><b>+ 추가</b></button>`).join('')}</div></div>`:'';
+  const completedHabitCount=habits.filter(habit=>(habit.completedDates||[]).includes(recordDate)).length;
+  const selectedHabitPercent=habits.length?Math.round(completedHabitCount/habits.length*100):0;
   const habitHtml=habits.map(habit=>`<div class="habit-row"><label><input type="checkbox" data-habit-toggle="${escapeHtml(habit.id)}" ${(habit.completedDates||[]).includes(recordDate)?'checked':''}><span>${escapeHtml(habit.name)}</span></label><button type="button" data-delete-habit="${escapeHtml(habit.id)}" aria-label="${escapeHtml(habit.name)} 삭제">삭제</button></div>`).join('')||'<p class="habit-empty">아직 등록한 습관이 없어요. 아주 작은 행동부터 적어보세요.</p>';
   const supportCard=item=>{const resource=item.resource||{},resourceId=resource.id||item.id||'',stageName=normalizedStage(item),canOpen=stageName==='preparing'||stageName==='waiting',file=item.fileMeta;return `<article class="support-policy-card"><div class="support-policy-main">${canOpen?`<button type="button" data-open-resource="${escapeHtml(resourceId)}"><b>${escapeHtml(resource.title||'저장한 지원')}</b><span>${escapeHtml(resource.organization||'')}</span>${resource.endsAt?`<small>${escapeHtml(String(resource.endsAt).slice(0,10))} 마감</small>`:''}<em>신청 준비 이어가기 →</em></button>`:`<div><b>${escapeHtml(resource.title||'저장한 지원')}</b><span>${escapeHtml(resource.organization||'')}</span></div>`}</div><div class="policy-file-box">${file?`<span title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span><div><button type="button" data-download-policy-file="${escapeHtml(resourceId)}">열기</button><button type="button" data-remove-policy-file="${escapeHtml(resourceId)}">삭제</button></div>`:`<label><input type="file" accept="application/pdf,.pdf" data-policy-file="${escapeHtml(resourceId)}"><span>+ 지원서 PDF 보관</span></label>`}<small>이 기기에만 저장돼요.</small>${recordFileStatus.resourceId===resourceId?`<p class="${recordFileStatus.ok===false?'error':''}">${escapeHtml(recordFileStatus.message)}</p>`:''}</div></article>`};
   return `
   <div class="eyebrow">05 — Record</div>
   <h2 class="mid" tabindex="-1">지금까지의 기록을<br>확인해보세요</h2>
   <p class="lede">완료한 단계와 선택한 행동을 한눈에 보고, 다음에 이어갈 곳을 정할 수 있어요.</p>
-  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates,habitDates)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>오늘의 연결</h3><div class="day-activities">${activityHtml}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
-  <section class="habit-tracker card"><div class="record-section-head"><div><h3>나의 작은 습관</h3><p>${recordDate}에 실천했다면 체크해보세요.</p></div><span>${habits.length}개</span></div><form class="habit-form" data-add-habit><input id="habitName" maxlength="40" placeholder="예: 창문 열고 물 한 잔 마시기" aria-label="새 습관"><button class="btn quiet" type="submit">습관 추가</button></form><div class="habit-list">${habitHtml}</div><p class="habit-guide">하루를 놓쳐도 괜찮아요. 달력의 연한 초록색은 습관을 실천한 날이에요.</p></section>
+  <div class="record-layout"><section class="record-calendar card">${monthCalendar(recordDate,activityDates,habitProgress)}</section><section class="day-record card"><div class="record-date-title"><b>${recordDate}</b>${selectedIsToday?'<span>오늘</span>':''}</div><h3>오늘의 연결</h3><div class="day-activities">${activityHtml}</div><h3>짧은 기록</h3><textarea id="recordNote" placeholder="오늘의 생각을 짧게 남겨보세요.">${escapeHtml(notes[recordDate]||'')}</textarea><button class="btn quiet" data-save-note>${recordSaveStatus.date===recordDate&&recordSaveStatus.ok?'저장됨 ✓':'기록 저장'}</button><p class="record-save-status ${recordSaveStatus.ok===false?'error':''}" data-record-save-status aria-live="polite">${recordSaveStatus.date===recordDate?escapeHtml(recordSaveStatus.message):''}</p></section></div>
+  <section class="habit-tracker card"><div class="record-section-head"><div><h3>나의 작은 습관</h3><p>${recordDate}에 실천했다면 체크해보세요.</p></div><strong class="habit-percentage"><b>${selectedHabitPercent}%</b><span>${completedHabitCount}/${habits.length} 완료</span></strong></div>${recommendationHtml}<form class="habit-form" data-add-habit><input id="habitName" maxlength="40" placeholder="예: 창문 열고 물 한 잔 마시기" aria-label="새 습관"><button class="btn quiet" type="submit">습관 추가</button></form><div class="habit-list">${habitHtml}</div><p class="habit-guide">하루를 놓쳐도 괜찮아요. 달력은 그날의 습관 달성률이 높을수록 진한 초록색으로 표시돼요.</p></section>
   <section class="change-records">
     <div class="record-section-head"><div><h3>작은 변화 기록</h3><p>2단계에서 사진으로 남긴 행동을 이곳에서 다시 볼 수 있어요.</p></div><span>사진 ${completions.filter(item=>item.photoDataUrl).length}장</span></div>
     ${dayPhotos.length?`<div class="change-photo-grid">${dayPhotos.map(item=>`<article class="change-photo-card"><img src="${item.photoDataUrl}" alt="${escapeHtml(item.title)} 기록 사진"><div><time>${escapeHtml(datePart(item.completedAt))}</time><b>${escapeHtml(item.title)}</b><button type="button" data-delete-record-photo="${escapeHtml(item.id)}">사진 삭제</button></div></article>`).join('')}</div>`:'<div class="change-record-empty">이 날짜에는 사진 기록이 없어요. 사진 없이 완료한 행동도 위의 ‘한 일’에 그대로 기록됩니다.</div>'}
@@ -1221,6 +1236,12 @@ function bind(){
   stage.querySelector('[data-add-habit]')?.addEventListener('submit',event=>{
     event.preventDefault();const input=document.getElementById('habitName'),name=(input?.value||'').trim();if(!name)return;
     const habits=recordRead(HABITS_KEY,[]);habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});writeRecordData(HABITS_KEY,habits);render();
+  });
+  stage.querySelectorAll('[data-add-suggested-habit]').forEach(button=>button.onclick=()=>{
+    const name=(button.dataset.addSuggestedHabit||'').trim();if(!name)return;
+    const habits=recordRead(HABITS_KEY,[]);
+    if(!habits.some(habit=>habit.name.trim().toLowerCase()===name.toLowerCase()))habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});
+    writeRecordData(HABITS_KEY,habits);render();
   });
   stage.querySelectorAll('[data-habit-toggle]').forEach(input=>input.onchange=()=>{const habits=recordRead(HABITS_KEY,[]),habit=habits.find(item=>item.id===input.dataset.habitToggle);if(!habit)return;const dates=new Set(habit.completedDates||[]);input.checked?dates.add(recordDate):dates.delete(recordDate);habit.completedDates=[...dates].sort();writeRecordData(HABITS_KEY,habits);render()});
   stage.querySelectorAll('[data-delete-habit]').forEach(button=>button.onclick=()=>{const habits=recordRead(HABITS_KEY,[]).filter(item=>item.id!==button.dataset.deleteHabit);writeRecordData(HABITS_KEY,habits);render()});
