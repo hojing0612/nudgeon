@@ -104,3 +104,15 @@ ADMIN_DASHBOARD_KEY=운영자만_아는_긴_임의_문자열
 ```
 
 화면에서 입력한 키는 서버의 환경변수와 비교되며 브라우저 저장소에 남기지 않습니다. 대시보드는 정책을 직접 수정하지 않습니다.
+
+
+### AI 사용 비용
+
+운영자 도구는 Anthropic의 공식 Cost API를 사용해 이번 달 실제 과금 금액을 표시합니다. 일반 Claude 호출용 키와 별도로 Claude Console의 `Settings > Admin keys`에서 만든 Admin API 키를 Vercel 서버 환경변수에 등록합니다.
+
+```env
+ANTHROPIC_ADMIN_KEY=sk-ant-admin01-...
+ANTHROPIC_NUDGEON_WORKSPACE_ID=wrkspc_...
+```
+
+`ANTHROPIC_NUDGEON_WORKSPACE_ID`를 생략하면 조직 전체 사용액이 표시됩니다. NudgeOn만의 비용을 분리하려면 전용 Anthropic Workspace와 API 키를 만들고 해당 Workspace ID를 등록하세요. 비용 데이터는 UTC 월 기준이며 최근 호출이 반영되기까지 보통 약 5분 걸릴 수 있습니다. Admin 키는 서버에서만 사용하고 브라우저 코드나 `VITE_` 환경변수에 넣지 않습니다.
