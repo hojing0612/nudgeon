@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex,nofollow" />
-  <title>정책 데이터 운영 점검 · NudgeOn</title>
+  <title>운영 상태 · NudgeOn</title>
   <link rel="stylesheet" href="/assets/policy-ops.css" />
 </head>
 <body>
   <main class="shell">
     <header>
       <p class="eyebrow">NudgeOn 운영자 도구</p>
-      <h1>정책 데이터 상태</h1>
-      <p class="intro">사용자에게 연결되는 정책의 최신성과 신청 가능 여부를 확인합니다.</p>
+      <h1>서비스 운영 상태</h1>
+      <p class="intro">정책 데이터의 최신성과 AI 사용 비용을 한곳에서 확인합니다.</p>
     </header>
 
     <section id="login-panel" class="panel login-panel">
@@ -33,7 +33,26 @@
         <button id="refresh-button" class="secondary" type="button">다시 확인</button>
       </div>
 
-      <div id="summary" class="summary-grid" aria-label="정책 상태 요약"></div>
+      <section class="section-block" aria-labelledby="ai-cost-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">AI 운영</p>
+            <h2 id="ai-cost-title">Claude 이번 달 사용액</h2>
+          </div>
+          <a class="console-link" href="https://platform.claude.com/settings/billing" target="_blank" rel="noreferrer">Anthropic 결제 화면</a>
+        </div>
+        <div id="ai-cost" class="ai-cost-card" aria-live="polite"></div>
+      </section>
+
+      <section class="section-block" aria-labelledby="policy-status-title">
+        <div class="section-heading compact">
+          <div>
+            <p class="section-kicker">정책 운영</p>
+            <h2 id="policy-status-title">정책 데이터 상태</h2>
+          </div>
+        </div>
+        <div id="summary" class="summary-grid" aria-label="정책 상태 요약"></div>
+      </section>
 
       <section class="panel issue-panel">
         <div class="issue-heading">
