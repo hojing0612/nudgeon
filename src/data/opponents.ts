@@ -77,6 +77,45 @@ export const SCENARIOS: Scenario[] = [
   },
 ];
 
+type PersonalizationSource = {
+  barrier: string;
+  microstepText: string;
+  helpRequest: string;
+};
+
+function sourceScenarioId(source: PersonalizationSource): string {
+  const text = `${source.helpRequest} ${source.microstepText}`;
+  if (/교수|메일|학교|수업|과제/.test(text)) return 'prof';
+  if (/친구|답장|메시지|연락/.test(text)) return 'friend';
+  if (/신청|기관|지원|프로그램|취업|구직|면접/.test(text)) return 'apply';
+  return 'center';
+}
+
+export function buildPersonalizedScenario(source: PersonalizationSource): Scenario | null {
+  const focus = (source.helpRequest || source.microstepText).replace(/\s+/g, ' ').trim();
+  if (!focus) return null;
+  const focusLabel = focus.length > 32 ? `${focus.slice(0, 31)}…` : focus;
+  const template = SCENARIOS.find((scenario) => scenario.id === sourceScenarioId(source)) || SCENARIOS[0];
+  const concernGoal = source.barrier === 'judged'
+    ? '평가나 거절이 걱정되는 부분을 필요한 만큼 말하기'
+    : source.barrier === 'contact'
+      ? '연락이 어려웠던 이유를 원하는 만큼 설명하기'
+      : '지금 막히는 지점을 한 가지 설명하기';
+  return {
+    ...template,
+    id: 'personalized',
+    title: `“${focusLabel}”을 위한 대화 연습`,
+    who: `${template.who} · 나의 현재 상황을 반영한 AI 상대`,
+    opponentRole: `${template.opponentRole} · 맞춤 연습`,
+    goals: [`“${focusLabel}”에 관해 첫 문장 시작하기`, concernGoal, '상대와 다음에 할 가장 작은 행동 정하기'],
+    openings: {
+      gentle: `${template.openings.gentle} 오늘은 “${focusLabel}”에 필요한 첫 문장만 함께 연습해볼게요.`,
+      standard: `${template.openings.standard} 오늘은 “${focusLabel}”에 관해 어떤 말을 먼저 꺼내고 싶으신가요?`,
+      realistic: `${template.openings.realistic} “${focusLabel}”을 진행하려면 지금 가장 먼저 확인해야 할 내용이 무엇인가요?`,
+    },
+  };
+}
+
 export type ChatMessage = {
   role: 'them' | 'me' | 'coach';
   text: string;
