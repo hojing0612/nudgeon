@@ -751,12 +751,15 @@ function renderRail(){
 
 /* ── 00 시작 ── */
 function vIntro(){
+  const hasSavedAssessment=Boolean(state.profile);
+  const startTarget=hasSavedAssessment?'micro':'check';
+  const startLabel=hasSavedAssessment?'마이크로스텝으로 돌아가기':'나의 첫 단계 시작하기';
   return `
   <section class="home-hero">
     <p class="home-kicker">조금씩, 나에게 맞는 속도로</p>
     <h1 class="big" tabindex="-1">오늘 할 수 있는<br>가장 작은 행동부터</h1>
     <p class="lede">몇 가지 질문에 답하면 지금 상태에 맞는 작은 행동을 제안해드려요. 필요하다면 대화를 연습하고, 이용할 수 있는 지원 정보도 함께 찾아볼 수 있어요.</p>
-    <button class="btn hero-cta" data-go="check">나의 첫 단계 시작하기</button>
+    <div class="row home-start-actions"><button class="btn hero-cta" data-go="${startTarget}">${startLabel}</button>${hasSavedAssessment?'<button class="btn quiet" data-restart="1">자가진단 다시 하기</button>':''}</div>
   </section>
   <section class="home-path" id="journeyIntro">
     <div class="home-section-head"><div><span>HOW NUDGEON WORKS</span><h2>작은 행동으로 이어지는<br>5단계 과정</h2></div><p>현재 상태를 확인하고, 오늘 할 수 있는 행동부터 시작합니다. 모든 단계는 이전으로 돌아가거나 잠시 멈출 수 있어요.</p></div>
@@ -768,7 +771,7 @@ function vIntro(){
       <li><b>05</b><div><strong>기록 확인하기</strong><span>완료한 행동과 다음 단계를 이어서 정합니다.</span></div></li>
     </ol>
   </section>
-  <section class="home-explain"><div class="home-mini-window" aria-hidden="true"><span></span><i></i></div><div><span>ONE STEP AT A TIME</span><h2>창문이 열리듯,<br>가능한 만큼만 시작합니다</h2><p>빠른 변화를 요구하지 않고 사용자가 정한 속도를 존중합니다. 작은 행동부터 대화 연습과 지원 정보까지 한 흐름으로 연결해요.</p><button class="btn ghost" data-go="check">5단계 살펴보기</button></div></section>
+  <section class="home-explain"><div class="home-mini-window" aria-hidden="true"><span></span><i></i></div><div><span>ONE STEP AT A TIME</span><h2>창문이 열리듯,<br>가능한 만큼만 시작합니다</h2><p>빠른 변화를 요구하지 않고 사용자가 정한 속도를 존중합니다. 작은 행동부터 대화 연습과 지원 정보까지 한 흐름으로 연결해요.</p><button class="btn ghost" data-go="${startTarget}">${hasSavedAssessment?'마이크로스텝으로 돌아가기':'5단계 살펴보기'}</button></div></section>
   <footer class="home-footer"><b>nudge.on</b><p>오늘 할 수 있는 작은 행동을 찾고, 필요할 때 다시 이어갈 수 있도록 돕습니다.</p><nav>이용 방법 <span>·</span> 자주 묻는 질문 <span>·</span> 지원 정보</nav><small>© 2026 NudgeOn. All rights reserved.</small></footer>`;
 }
 
