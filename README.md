@@ -8,6 +8,7 @@
 - `/rehearsal` — React 기반 사회적 리허설 (`src/`)
 - `/api/chat` — AI 대화 API (`api/chat.js`)
 - `/api/resources` — 검증된 지원정책 추천 API (`api/resources.js`)
+- `/ops/policies` — 정책 DB·자동 수집 상태를 확인하는 운영 대시보드
 
 Vercel의 경로 연결은 `vercel.json`에서 관리합니다. 기존처럼 React 안에 홈을 iframe으로 넣지 않습니다.
 
@@ -91,3 +92,5 @@ npm run build
 개인회원에게 허용되지 않는 채용정보 목록·상세 API는 호출하지 않습니다. 공통코드·학과·직업·직무·기업 정보 API는 사용자에게 기관이나 기업 목록 자체를 추천하지 않고, 이후 지역·NCS·관심 직종 매칭을 보강하는 참조 데이터로만 사용하도록 `api/_work24.js`의 카탈로그에 분리되어 있습니다.
 
 AI 추천을 사용하려면 `20260812113000_add_ai_policy_analysis.sql`까지 적용하고 Vercel Production 환경에 `ANTHROPIC_API_KEY`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`를 등록해야 합니다. `CRON_SECRET`에는 충분히 긴 임의 문자열을 사용하며, Vercel은 Cron 요청의 `Authorization` 헤더에 이 값을 자동으로 넣습니다.
+
+정책 운영 대시보드를 사용하려면 Vercel 환경변수에 별도의 `OPS_DASHBOARD_KEY`를 등록합니다. `/ops/policies`에서 이 키를 입력하면 전체·게시·모집·마감 임박 정책 수, 누락·중복·검증 지연 항목, 출처별 최근 수집 상태를 확인할 수 있습니다. 키는 브라우저 `sessionStorage`에만 저장되며 탭을 닫으면 사라집니다. 대시보드는 개인 사용자 데이터에 접근하지 않습니다.
