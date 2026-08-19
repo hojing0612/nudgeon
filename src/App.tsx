@@ -27,12 +27,14 @@ import {
   behaviorFeedback,
   completedGoalCount,
   DIFFICULTY_META,
+  fallbackCoach,
+  personalizationSummary,
   recommendDifficulty,
   recommendScenarioId,
   readJourneySnapshot,
 } from '@/lib/rehearsalPersonalization';
 import type { RehearsalDifficulty } from '@/lib/rehearsalPersonalization';
-import { SCENARIOS, FALLBACK_EXAMPLES, NEXT_STEPS } from '@/data/opponents';
+import { buildPersonalizedScenario, SCENARIOS, FALLBACK_EXAMPLES, NEXT_STEPS } from '@/data/opponents';
 import type { Scenario, ChatMessage } from '@/data/opponents';
 import { OpponentPanel } from '@/components/OpponentPanel';
 import { DialogueTranscript } from '@/components/DialogueTranscript';
@@ -189,6 +191,7 @@ async function askAI(
   scenario: Scenario,
   difficulty: RehearsalDifficulty,
   currentGoal: string,
+  journeyContext: ReturnType<typeof loadJourneyContext>,
 ): Promise<AISafetyCheck> {
   const history = messages
     .filter((m) => m.role !== 'coach')
@@ -206,6 +209,11 @@ async function askAI(
         difficulty,
         currentGoal,
         turn: history.filter((message) => message.role === 'user').length,
+        barrier: journeyContext.barrierLabel || journeyContext.barrier,
+        vision: journeyContext.vision,
+        microstep: journeyContext.microstepText,
+        helpRequest: journeyContext.helpRequest,
+        previousCoach: messages.filter((message) => message.role === 'coach').slice(-1)[0]?.text || '',
       },
     }),
   });
@@ -311,7 +319,9 @@ async function askAIForRewrite(scenario: Scenario, userText: string): Promise<st
 function App() {
   const journeyContextRef = useRef(loadJourneyContext());
   const journeyContext = journeyContextRef.current;
-  const recommendedScenarioId = recommendScenarioId(journeyContext);
+  const personalizedScenarioRef = useRef(buildPersonalizedScenario(journeyContext));
+  const personalizedScenario = personalizedScenarioRef.current;
+  const recommendedScenarioId = personalizedScenario?.id || recommendScenarioId(journeyContext);
   const restoredProgressRef = useRef<RehearsalProgress | null>(loadRehearsalProgress());
   const restoredProgress = restoredProgressRef.current;
   const resourceContextRef = useRef<ResourceRehearsalContext | null>(loadResourceRehearsalContext());
@@ -323,7 +333,8 @@ function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(() =>
-    resourceContext?.scenario || SCENARIOS.find((item) => item.id === applicableProgress?.scenarioId) || null);
+    resourceContext?.scenario || (applicableProgress?.scenarioId === personalizedScenario?.id ? personalizedScenario : null)
+      || SCENARIOS.find((item) => item.id === applicableProgress?.scenarioId) || null);
   const [difficulty, setDifficulty] = useState<RehearsalDifficulty>(() =>
     applicableProgress?.difficulty || recommendDifficulty(journeyContext.level));
   const difficultyTouchedRef = useRef(false);
@@ -553,7 +564,7 @@ function App() {
 
     try {
       const currentGoal = scenario.goals[Math.min(completedGoalCount(completedTurns, scenario.goals.length), scenario.goals.length - 1)] || scenario.goals[0];
-      const result = await askAI(newMessages, scenario, difficulty, currentGoal);
+      const result = await askAI(newMessages, scenario, difficulty, currentGoal, journeyContext);
       const updated = [...newMessages, { role: 'them' as const, text: result.reply }];
       if (result.coach) updated.push({ role: 'coach' as const, text: '코칭 · ' + result.coach });
       setMessages(updated);
@@ -582,8 +593,8 @@ function App() {
       }
     } catch {
       const fallback = '네, 편하게 말씀해 주세요. 천천히 하셔도 괜찮습니다.';
-      const fallbackCoach = '지금처럼 한 문장만 써도 충분히 전달돼요.';
-      setMessages([...newMessages, { role: 'them', text: fallback }, { role: 'coach', text: '코칭 · ' + fallbackCoach }]);
+      const tailoredCoach = fallbackCoach(completedTurns + 1, scenario.goals[Math.min(completedTurns, scenario.goals.length - 1)] || scenario.goals[0], text);
+      setMessages([...newMessages, { role: 'them', text: fallback }, { role: 'coach', text: '코칭 · ' + tailoredCoach }]);
       setCurrentLine(fallback);
       if (!muted) {
         speakTTS(fallback, () => {
@@ -601,7 +612,7 @@ function App() {
     } finally {
       setBusy(false);
     }
-  }, [scenario, busy, phase, inputText, messages, difficulty, completedTurns, muted, speakTTS, stopTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
+  }, [scenario, busy, phase, inputText, messages, difficulty, completedTurns, journeyContext, muted, speakTTS, stopTTS, stopSpeech, resetSpeech, recordLatencyIfFirst]);
 
   const finishRehearsal = useCallback(() => {
     stopTTS();
@@ -795,8 +806,10 @@ function App() {
   const isFinished = phase === 'finished';
   const showResults = isFinished;
   const burdenLabels = ['전혀 부담되지 않아요', '조금 부담돼요', '보통이에요', '많이 부담돼요', '매우 부담돼요'];
-  const nextSteps = scenario ? NEXT_STEPS[scenario.id] || (scenario.id.startsWith('resource:') ? NEXT_STEPS.apply : []) : [];
-  const personalizedScenarios = [...SCENARIOS].sort((a, b) =>
+  const nextSteps = scenario ? NEXT_STEPS[scenario.id]
+    || (scenario.id === 'personalized' ? NEXT_STEPS[recommendScenarioId(journeyContext)] : null)
+    || (scenario.id.startsWith('resource:') ? NEXT_STEPS.apply : []) : [];
+  const personalizedScenarios = [...(personalizedScenario ? [personalizedScenario] : []), ...SCENARIOS].sort((a, b) =>
     Number(b.id === recommendedScenarioId) - Number(a.id === recommendedScenarioId));
   const goalsCompleted = scenario ? completedGoalCount(completedTurns, scenario.goals.length) : 0;
   const targetTurns = DIFFICULTY_META[difficulty].targetTurns;
@@ -852,7 +865,7 @@ function App() {
               <p className="lede">자가진단과 선택한 마이크로스텝을 바탕으로 가장 가까운 상황을 먼저 보여드려요. 다른 상황을 골라도 괜찮아요.</p>
               <div className="personalization-note">
                 <span>지금의 추천 기준</span>
-                <b>Lv.{journeyContext.level} · {journeyContext.microstepText || '현재 상태와 바라는 변화'}</b>
+                <b>Lv.{journeyContext.level} · {personalizationSummary(journeyContext)}</b>
               </div>
               <div className="scenario-grid">
                 {personalizedScenarios.map((s, index) => (
@@ -987,9 +1000,7 @@ function App() {
                     isUserTurn={isUserTurn}
                     currentLine={currentLine}
                     muted={muted}
-                    cameraOn={cameraOn}
                     onToggleMute={() => setMuted((v) => !v)}
-                    onToggleCamera={() => setCameraOn((v) => !v)}
                   />
 
                   <div className="camera-card" style={{ marginTop: 16 }}>

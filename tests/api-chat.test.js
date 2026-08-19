@@ -93,3 +93,19 @@ test('허용된 작업 유형만 서버 프롬프트를 만들 수 있다', () =
   assert.match(buildServerSystem('final-draft', { scenario: '친구에게 답장하기' }), /실제로 전화·문자·메일/);
   assert.equal(buildServerSystem('arbitrary-system', {}), null);
 });
+
+test('리허설 프롬프트가 전 단계 개인화 맥락과 직전 코칭을 반영한다', () => {
+  const system = buildServerSystem('rehearsal', {
+    scenario: '맞춤 문의 연습',
+    role: '지원 담당자',
+    barrier: '거절·평가 불안',
+    vision: 'work',
+    microstep: '지원사업 홈페이지 열기',
+    helpRequest: '신청 전화를 연습하고 싶어요',
+    previousCoach: '첫 문장을 시작했어요',
+    turn: 2,
+  });
+  assert.match(system, /지원사업 홈페이지 열기/);
+  assert.match(system, /신청 전화를 연습하고 싶어요/);
+  assert.match(system, /이전 코칭\(첫 문장을 시작했어요\)/);
+});

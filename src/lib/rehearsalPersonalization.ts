@@ -3,8 +3,11 @@ export type RehearsalDifficulty = 'gentle' | 'standard' | 'realistic';
 export type JourneySnapshot = {
   level: number;
   barrier: string;
+  barrierLabel: string;
   vision: string;
   microstepText: string;
+  helpRequest: string;
+  goalTags: string[];
 };
 
 export function readJourneySnapshot(raw: string | null): JourneySnapshot {
@@ -18,12 +21,20 @@ export function readJourneySnapshot(raw: string | null): JourneySnapshot {
     return {
       level: Math.max(1, Math.min(5, Number(profile.level) || 3)),
       barrier: String(profile.barrier || ''),
+      barrierLabel: String(profile.barrierLabel || ''),
       vision: String(profile.vision || ''),
       microstepText: String(selected?.text || ''),
+      helpRequest: String(profile.helpRequest || ''),
+      goalTags: Array.isArray(profile.goalTags) ? profile.goalTags.map(String).slice(0, 5) : [],
     };
   } catch {
-    return { level: 3, barrier: '', vision: '', microstepText: '' };
+    return { level: 3, barrier: '', barrierLabel: '', vision: '', microstepText: '', helpRequest: '', goalTags: [] };
   }
+}
+
+export function personalizationSummary(snapshot: JourneySnapshot): string {
+  const parts = [snapshot.barrierLabel, snapshot.microstepText, snapshot.helpRequest].filter(Boolean);
+  return parts.slice(0, 2).join(' · ') || '현재 상태와 바라는 변화';
 }
 
 export function recommendScenarioId(snapshot: JourneySnapshot): string {
@@ -66,4 +77,13 @@ export function behaviorFeedback(turns: number, helpCount: number, rewriteCount:
   if (helpCount > 0) feedback.push('막힌 순간에 문장 도움을 활용했어요.');
   if (rewriteCount > 0) feedback.push('내 표현을 더 편한 문장으로 다듬었어요.');
   return feedback.length ? feedback : ['연습 화면까지 와서 상황을 살펴봤어요.'];
+}
+
+export function fallbackCoach(turn: number, goal: string, userText: string): string {
+  const compact = userText.trim().length <= 18;
+  if (turn <= 1) return compact
+    ? `첫 문장으로 ${goal}을 시작했어요. 다음에는 원하는 도움을 한 가지만 덧붙여 보세요.`
+    : `첫 문장에서 상황을 설명했어요. 다음에는 상대에게 원하는 행동을 한 문장으로 말해보세요.`;
+  if (turn === 2) return `상대 질문에 답하며 대화를 이어갔어요. 이제 ${goal}에 필요한 조건을 하나 확인해보세요.`;
+  return `필요한 내용을 ${turn}번 주고받았어요. 마지막으로 다음 행동이나 일정을 확인하면 실전 문장이 완성돼요.`;
 }
