@@ -157,7 +157,9 @@ async function loadCsvSheet(sheetName){
     'option_value','score','flag','required','active','show_if','note','step_id','chain_id',
     'chain_label','difficulty','title','why_text','feature_type','support_label','barrier_id',
     'barrier_label','recommendation_order','start_difficulty','feature_title',
-    'feature_description','choice_order','choice_title','choice_detail','level','barrier_tags','goal_tags'
+    'feature_description','choice_order','choice_title','choice_detail','level','barrier_tags','goal_tags',
+    'help_type','help_title','help_description','help_steps','primary_action','resource_url',
+    'search_keyword','rehearsal_scenario','fallback_action','completion_message'
   ];
   const normalizeHeader = header => {
     const value=String(header||'').trim();
@@ -340,6 +342,27 @@ function actionSizeFor(level){
   return '실제 연결로 이어지는 한 단계 행동';
 }
 
+function splitHelpSteps(value){
+  return String(value ?? '').split('|').map(item=>item.trim()).filter(Boolean);
+}
+
+function microstepHelpFromRow(row){
+  const type=String(row.help_type ?? '').trim();
+  if(!type)return null;
+  return {
+    type,
+    title:String(row.help_title ?? '').trim(),
+    description:String(row.help_description ?? '').trim(),
+    steps:splitHelpSteps(row.help_steps),
+    primaryAction:String(row.primary_action ?? '').trim(),
+    resourceUrl:String(row.resource_url ?? '').trim(),
+    searchKeyword:String(row.search_keyword ?? '').trim(),
+    rehearsalScenario:String(row.rehearsal_scenario ?? '').trim(),
+    fallbackAction:String(row.fallback_action ?? '').trim(),
+    completionMessage:String(row.completion_message ?? '').trim()
+  };
+}
+
 function buildMicrostepData(rows){
   const groups = new Map();
   const pool=[];
@@ -360,7 +383,7 @@ function buildMicrostepData(rows){
       why:String(r.why_text ?? '').trim(),
       feature:String(r.feature_type??'').trim(),supportLabel:String(r.support_label??'').trim(),
       level:Number(r.level)||3,barrierTags:PERSONALIZATION.splitTags(r.barrier_tags),
-      goalTags:PERSONALIZATION.splitTags(r.goal_tags)
+      goalTags:PERSONALIZATION.splitTags(r.goal_tags),help:microstepHelpFromRow(r)
     };
     if(step.stepId&&step.title)pool.push(step);
     groups.get(id).steps.push(step);
@@ -464,6 +487,7 @@ async function initializeApp(){
     SUPPORT_DATA=FALLBACK_CONTENT.support;
   }
   const restored = restoreProgress();
+  if(restored && state.micro.length)state.micro=hydrateMicrostepHelp(state.micro);
   const requestedScreen = new URLSearchParams(window.location.search).get('screen');
   if(requestedScreen && canOpenScreen(requestedScreen)){
     state.screen = requestedScreen;
@@ -484,7 +508,7 @@ function createDemoSteps(barrier){
     if(!group?.chain?.length) return null;
     const difficulty=Math.max(0,Math.min(group.chain.length-1,startDifficulty+levelOffset));
     return {chainId, difficulty, text:group.chain[difficulty], why:group.why[difficulty],
-            feature:group.feature, done:false, supportOpen:false, selectedSupport:0,
+            feature:group.feature, help:group.steps?.[difficulty]?.help||null, done:false, supportOpen:false, selectedSupport:0,
             adjustedDown:0, adjustedUp:0};
   }).filter(Boolean);
 }
@@ -517,11 +541,19 @@ function createPersonalizedSteps(regen=false){
     const difficulty=Math.max(0,Math.min(group.steps.length-1,baseIndex+offset));
     const selected=group.steps[difficulty];
     return {stepId:selected.stepId,chainId:base.chainId,difficulty,text:selected.title,why:selected.why,
-      feature:selected.feature,level:selected.level,barrierTags:selected.barrierTags,goalTags:selected.goalTags,
+      feature:selected.feature,help:selected.help||null,level:selected.level,barrierTags:selected.barrierTags,goalTags:selected.goalTags,
       done:false,supportOpen:false,selectedSupport:0,adjustedDown:0,adjustedUp:0};
   }).filter(Boolean);
   state.recommendationHistory=[...new Set([...state.recommendationHistory,...result.map(step=>step.chainId)])].slice(-24);
   return result;
+}
+
+function hydrateMicrostepHelp(steps){
+  return steps.map(step=>{
+    const source=MICROSTEP_POOL.find(item=>item.stepId===step.stepId)
+      || MICROSTEP_CHAINS[step.chainId]?.steps?.[Number(step.difficulty)||0];
+    return source?.help ? {...step,help:source.help,feature:source.feature||step.feature} : step;
+  });
 }
 
 const SCENARIOS = [
@@ -920,7 +952,7 @@ function vMicro(){
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
              ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
         <div class="step-actions">
-          ${SUPPORT_DATA[s.feature]?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
+          ${s.help||SUPPORT_DATA[s.feature]?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
           <button class="tiny" data-smaller="${i}" ${s.chainId && s.difficulty===0?'disabled':''}>더 작게</button>
           <button class="tiny" data-larger="${i}" ${!s.chainId || s.difficulty>=MICROSTEP_CHAINS[s.chainId].chain.length-1?'disabled':''}>한 단계 높이기</button>
         </div>
@@ -968,6 +1000,7 @@ function vCompletion(){
 
 
 function renderSupport(s,i){
+  if(s.help)return renderMicrostepHelp(s,i);
   const data = SUPPORT_DATA[s.feature];
   if(!data) return '';
   if(s.feature==='video'){
@@ -986,6 +1019,94 @@ function renderSupport(s,i){
     ${s.feature==='route'?`<div class="route-line"><i></i></div><div class="support-meta"><span>출발 · 집 앞</span><span>혼잡도 · 낮음</span><span>경사 · 거의 없음</span></div>`:''}
     ${s.feature==='cafe'?`<div class="draft">주문 연습 · “${data.choices[s.selectedSupport||0][0]} 한 잔 주세요.”</div>`:''}
   </div>`;
+}
+
+function helpDurationSeconds(help){
+  const source=[help.title,help.primaryAction,...help.steps].join(' ');
+  const minute=source.match(/(\d+)\s*분/);
+  if(minute)return Number(minute[1])*60;
+  const second=source.match(/(\d+)\s*초/);
+  return second?Number(second[1]):180;
+}
+
+function helpActionMarkup(help,i){
+  const label=escapeHtml(help.primaryAction||'시작하기');
+  if(help.type==='timer')return `<button class="btn help-primary" data-help-timer="${i}" data-seconds="${helpDurationSeconds(help)}">${label}</button><output class="help-timer" data-help-timer-output="${i}" aria-live="polite"></output>`;
+  if(['map','place'].includes(help.type))return `<button class="btn help-primary" data-help-map="${i}">${label}</button>`;
+  if(['video','link'].includes(help.type))return `<button class="btn help-primary" data-help-link="${i}">${label}</button>`;
+  if(['message','draft'].includes(help.type))return `<button class="btn help-primary" data-help-copy="${i}">${label}</button>`;
+  if(help.type==='photo')return `<button class="btn help-primary" data-help-photo="${i}">${label}</button><input class="hide" type="file" accept="image/*" capture="environment" data-help-photo-input="${i}"><div class="help-photo-preview" data-help-photo-preview="${i}"></div>`;
+  if(help.type==='rehearsal')return `<button class="btn help-primary" data-help-rehearsal="${i}">${label}</button>`;
+  return `<button class="btn help-primary" data-help-start="${i}">${label}</button>`;
+}
+
+function renderMicrostepHelp(s,i){
+  const help=s.help;
+  return `<div class="support-panel micro-help" data-help-panel="${i}">
+    <div class="support-head"><div><div class="support-title">${escapeHtml(help.title||s.text)}</div><p class="support-desc">${escapeHtml(help.description)}</p></div>
+    <button class="tiny" data-support="${i}">닫기</button></div>
+    ${help.steps.length?`<ol class="help-steps">${help.steps.map((step,j)=>`<li><button type="button" data-help-check="${i}:${j}" aria-pressed="false"><span>${j+1}</span>${escapeHtml(step)}</button></li>`).join('')}</ol>`:''}
+    <div class="help-action-row">${helpActionMarkup(help,i)}</div>
+    ${help.fallbackAction?`<p class="help-fallback"><b>오늘은 더 작게</b>${escapeHtml(help.fallbackAction)}</p>`:''}
+    ${help.completionMessage?`<p class="help-completion" data-help-completion="${i}">${escapeHtml(help.completionMessage)}</p>`:''}
+  </div>`;
+}
+
+function revealHelpCompletion(i){
+  document.querySelector(`[data-help-completion="${i}"]`)?.classList.add('visible');
+}
+
+function startHelpTimer(button){
+  const i=Number(button.dataset.helpTimer);
+  const output=document.querySelector(`[data-help-timer-output="${i}"]`);
+  if(button._helpTimer){
+    clearInterval(button._helpTimer);button._helpTimer=null;button.textContent='계속하기';return;
+  }
+  let remaining=Number(button.dataset.remaining||button.dataset.seconds)||180;
+  const update=()=>{
+    if(output)output.textContent=`${String(Math.floor(remaining/60)).padStart(2,'0')}:${String(remaining%60).padStart(2,'0')}`;
+    if(remaining<=0){
+      clearInterval(button._helpTimer);button._helpTimer=null;delete button.dataset.remaining;button.textContent='완료했어요';revealHelpCompletion(i);return;
+    }
+    remaining-=1;button.dataset.remaining=String(remaining);
+  };
+  button.textContent='잠시 멈추기';update();
+  button._helpTimer=setInterval(update,1000);
+}
+
+function openHelpLink(step){
+  const url=step?.help?.resourceUrl;
+  if(!url)return;
+  if(url.startsWith('/')){window.location.href=url;return;}
+  if(/^https?:\/\//i.test(url))window.open(url,'_blank','noopener,noreferrer');
+}
+
+function mapSearchUrl(keyword,position){
+  const query=encodeURIComponent(keyword||'주변 장소');
+  if(position?.coords){
+    const {latitude,longitude}=position.coords;
+    return `https://www.google.com/maps/search/${query}/@${latitude},${longitude},15z`;
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
+}
+
+function openHelpMap(step,button){
+  const keyword=step?.help?.searchKeyword||step?.text||'주변 장소';
+  const popup=window.open('about:blank','_blank');
+  if(popup)popup.opener=null;
+  const finish=position=>{
+    const url=mapSearchUrl(keyword,position);
+    if(popup)popup.location.href=url;else window.location.href=url;
+  };
+  button.textContent='위치를 확인하는 중…';
+  if(!navigator.geolocation){finish(null);return;}
+  navigator.geolocation.getCurrentPosition(finish,()=>finish(null),{enableHighAccuracy:false,timeout:6000,maximumAge:300000});
+}
+
+async function copyHelpText(step,button){
+  const text=step?.help?.steps?.[0]||step?.help?.fallbackAction||step?.text||'';
+  try{await navigator.clipboard.writeText(text);button.textContent='복사했어요';revealHelpCompletion(Number(button.dataset.helpCopy));}
+  catch{button.textContent='길게 눌러 문장을 복사해 주세요';}
 }
 
 /* ── 03 사회적 리허설 ── */
@@ -1394,6 +1515,31 @@ function bind(){
     state.micro[i].why='첫 동작까지 확인했어요. 여기서 멈춰도 완료예요.';
     setTimeout(render,450);
   });
+  stage.querySelectorAll('[data-help-check]').forEach(b=>b.onclick=()=>{
+    const [i]=b.dataset.helpCheck.split(':').map(Number);
+    const pressed=b.getAttribute('aria-pressed')==='true';
+    b.setAttribute('aria-pressed',String(!pressed));
+    if(!pressed && [...stage.querySelectorAll(`[data-help-check^="${i}:"]`)].every(item=>item.getAttribute('aria-pressed')==='true'))revealHelpCompletion(i);
+  });
+  stage.querySelectorAll('[data-help-start]').forEach(b=>b.onclick=()=>{
+    b.textContent='시작했어요';b.closest('[data-help-panel]')?.classList.add('started');revealHelpCompletion(Number(b.dataset.helpStart));
+  });
+  stage.querySelectorAll('[data-help-timer]').forEach(b=>b.onclick=()=>startHelpTimer(b));
+  stage.querySelectorAll('[data-help-link]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.helpLink);openHelpLink(state.micro[i]);revealHelpCompletion(i);});
+  stage.querySelectorAll('[data-help-map]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.helpMap);openHelpMap(state.micro[i],b);revealHelpCompletion(i);});
+  stage.querySelectorAll('[data-help-copy]').forEach(b=>b.onclick=()=>copyHelpText(state.micro[Number(b.dataset.helpCopy)],b));
+  stage.querySelectorAll('[data-help-photo]').forEach(b=>b.onclick=()=>stage.querySelector(`[data-help-photo-input="${b.dataset.helpPhoto}"]`)?.click());
+  stage.querySelectorAll('[data-help-photo-input]').forEach(input=>input.onchange=()=>{
+    const file=input.files?.[0];if(!file)return;
+    const i=Number(input.dataset.helpPhotoInput),preview=stage.querySelector(`[data-help-photo-preview="${i}"]`);
+    if(preview){const url=URL.createObjectURL(file);preview.innerHTML=`<img src="${url}" alt="선택한 기록 사진"><span>이 사진은 도움 화면을 닫으면 사라져요.</span>`;}
+    revealHelpCompletion(i);
+  });
+  stage.querySelectorAll('[data-help-rehearsal]').forEach(b=>b.onclick=()=>{
+    const i=Number(b.dataset.helpRehearsal),step=state.micro[i];state.selectedMicroIndex=i;
+    try{localStorage.setItem('nudgeon.rehearsal-request.v1',JSON.stringify({scenario:step.help?.rehearsalScenario||'',stepId:step.stepId,title:step.text,createdAt:new Date().toISOString()}));}catch{}
+    go('rehearsal');
+  });
   stage.querySelectorAll('[data-regen]').forEach(b=>b.onclick=()=>loadSteps(true));
   stage.querySelectorAll('[data-scenario]').forEach(b=>b.onclick=()=>startScenario(b.dataset.scenario));
   stage.querySelectorAll('[data-exitsc]').forEach(b=>b.onclick=()=>{state.scenario=null; state.messages=[]; render()});
@@ -1561,6 +1707,7 @@ function adjustMicrostep(i,direction){
   cur.text=selected?.title||group.chain[next];
   cur.why=selected?.why||group.why[next];
   cur.feature=selected?.feature||group.feature;
+  cur.help=selected?.help||null;
   cur.level=selected?.level||cur.level;
   cur.barrierTags=selected?.barrierTags||cur.barrierTags;
   cur.goalTags=selected?.goalTags||cur.goalTags;
