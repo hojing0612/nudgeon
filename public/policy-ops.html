@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>정책 데이터 운영 점검 · NudgeOn</title>
+  <link rel="stylesheet" href="/assets/policy-ops.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <p class="eyebrow">NudgeOn 운영자 도구</p>
+      <h1>정책 데이터 상태</h1>
+      <p class="intro">사용자에게 연결되는 정책의 최신성과 신청 가능 여부를 확인합니다.</p>
+    </header>
+
+    <section id="login-panel" class="panel login-panel">
+      <label for="admin-key">관리자 키</label>
+      <div class="login-row">
+        <input id="admin-key" type="password" autocomplete="current-password" placeholder="운영자 키를 입력하세요" />
+        <button id="load-button" type="button">상태 확인</button>
+      </div>
+      <p id="login-message" class="message">키는 현재 탭에서만 사용되며 저장되지 않습니다.</p>
+    </section>
+
+    <section id="dashboard" hidden>
+      <div class="toolbar">
+        <div>
+          <p id="checked-at" class="muted"></p>
+          <p id="verified-at" class="muted"></p>
+        </div>
+        <button id="refresh-button" class="secondary" type="button">다시 확인</button>
+      </div>
+
+      <div id="summary" class="summary-grid" aria-label="정책 상태 요약"></div>
+
+      <section class="panel issue-panel">
+        <div class="issue-heading">
+          <div>
+            <h2>확인이 필요한 정책</h2>
+            <p id="issue-count" class="muted"></p>
+          </div>
+          <select id="issue-filter" aria-label="문제 유형 필터">
+            <option value="all">전체 문제</option>
+            <option value="마감 임박">마감 임박</option>
+            <option value="마감">마감</option>
+            <option value="정보 누락">정보 누락</option>
+            <option value="링크 형식 이상">링크 이상</option>
+            <option value="정책명 중복">중복</option>
+          </select>
+        </div>
+        <div id="issues" class="issues"></div>
+      </section>
+    </section>
+  </main>
+  <script type="module" src="/assets/policy-ops.js"></script>
+</body>
+</html>
