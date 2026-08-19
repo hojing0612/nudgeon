@@ -5,6 +5,7 @@
   ],
   "rewrites": [
     { "source": "/", "destination": "/home.html" },
+    { "source": "/ops/policies", "destination": "/ops/policies.html" },
     { "source": "/rehearsal", "destination": "/index.html" },
     { "source": "/rehearsal/:path*", "destination": "/index.html" }
   ]
