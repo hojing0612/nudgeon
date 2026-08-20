@@ -376,14 +376,14 @@ body{background:var(--paper);line-height:1.6}
 .app[data-window-screen="connect"] .daylight{opacity:1}
 .app[data-window-screen="connect"] .curtain.l{left:0;width:20px;transform:none}
 .app[data-window-screen="connect"] .curtain.r{left:184px;width:20px;transform:none}
-.app[data-window-screen="connect"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E}
-.app[data-window-screen="connect"] .window-signpost{display:block;left:143px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
+.app[data-window-screen="connect"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E;box-shadow:0 0 10px 4px rgba(244,216,142,.45),0 0 24px 9px rgba(244,216,142,.18)}
+.app[data-window-screen="connect"] .window-signpost{display:block;left:149px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
 .app[data-window-screen="record"] .window-glow{left:-25px;top:-35px;width:310px;height:370px}
 .app[data-window-screen="record"] .window-pane{background:linear-gradient(180deg,#AEC7DA 0%,#E8D092 39%,#C8DDBB 70%,#BBB698 100%)}
 .app[data-window-screen="record"] .daylight{opacity:1}
-.app[data-window-screen="record"] .sun-large{display:block;left:122px;top:26px;width:36px;height:36px;border-radius:50%;background:#DDB666}
-.app[data-window-screen="record"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E}
-.app[data-window-screen="record"] .window-signpost{display:block;left:143px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
+.app[data-window-screen="record"] .sun-large{display:block;left:122px;top:26px;width:36px;height:36px;border-radius:50%;background:#DDB666;box-shadow:0 0 16px 7px rgba(221,182,102,.38),0 0 34px 14px rgba(221,182,102,.16)}
+.app[data-window-screen="record"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E;box-shadow:0 0 10px 4px rgba(244,216,142,.45),0 0 24px 9px rgba(244,216,142,.18)}
+.app[data-window-screen="record"] .window-signpost{display:block;left:149px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
 .app[data-window-screen="record"] .window-long-path{display:block;left:41px;top:216px;width:122px;height:4px;border-radius:2px;background:rgba(232,219,181,.4)}
 
 /* 페이지 전환으로 새로 열리는 4·5단계도 직전 단계의 커튼 위치에서 이어집니다. */

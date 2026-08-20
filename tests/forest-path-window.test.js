@@ -22,7 +22,11 @@ test('창문은 1~5단계에 따라 커튼이 열리고 4·5단계 풍경이 이
   assert.match(publicStyles, /\.app\[data-window-screen="connect"\] \.curtain\.l\{animation:classic-stage4-left/);
   assert.match(publicStyles, /\.app\[data-window-screen="record"\] \.curtain\.l\{animation:classic-stage5-left/);
   assert.match(publicStyles, /data-window-screen="connect"\] \.signpost-light\{display:block/);
+  assert.match(publicStyles, /data-window-screen="connect"\] \.signpost-light\{[^}]*box-shadow:0 0 10px 4px/);
+  assert.match(publicStyles, /data-window-screen="connect"\] \.window-signpost\{display:block;left:149px/);
   assert.match(publicStyles, /data-window-screen="record"\] \.sun-large\{display:block/);
+  assert.match(publicStyles, /data-window-screen="record"\] \.sun-large\{[^}]*box-shadow:0 0 16px 7px/);
+  assert.match(publicStyles, /data-window-screen="record"\] \.window-signpost\{display:block;left:149px/);
   assert.match(publicStyles, /data-window-screen="record"\] \.window-long-path\{display:block/);
 });
 
