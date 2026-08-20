@@ -1387,15 +1387,20 @@ function bind(){
     }
     render();
   });
+  const renderHabitsPreservingScroll=()=>{
+    const scrollPosition={x:window.scrollX,y:window.scrollY};
+    render();
+    requestAnimationFrame(()=>window.scrollTo(scrollPosition.x,scrollPosition.y));
+  };
   stage.querySelector('[data-add-habit]')?.addEventListener('submit',event=>{
     event.preventDefault();const input=document.getElementById('habitName'),name=(input?.value||'').trim();if(!name)return;
-    const habits=recordRead(HABITS_KEY,[]);habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});writeRecordData(HABITS_KEY,habits);render();
+    const habits=recordRead(HABITS_KEY,[]);habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});writeRecordData(HABITS_KEY,habits);renderHabitsPreservingScroll();
   });
   stage.querySelectorAll('[data-add-suggested-habit]').forEach(button=>button.onclick=()=>{
     const name=(button.dataset.addSuggestedHabit||'').trim();if(!name)return;
     const habits=recordRead(HABITS_KEY,[]);
     if(!habits.some(habit=>habit.name.trim().toLowerCase()===name.toLowerCase()))habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});
-    writeRecordData(HABITS_KEY,habits);render();
+    writeRecordData(HABITS_KEY,habits);renderHabitsPreservingScroll();
   });
   stage.querySelectorAll('[data-habit-toggle]').forEach(input=>input.onchange=()=>{
     const habitId=input.dataset.habitToggle;
