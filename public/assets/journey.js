@@ -1136,9 +1136,10 @@ function nearbyPlacesMarkup(places,keyword,position){
   }
   return `<div class="nearby-head"><b>가까운 순서</b><span>${places.length}곳</span></div><ul class="nearby-list">${places.map(place=>{
     const destination=`${place.lat},${place.lon}`;
+    const detail=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
     const directions=`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=walking`;
     const distance=place.distance<1000?`${place.distance}m`:`${(place.distance/1000).toFixed(1)}km`;
-    return `<li><div><strong>${escapeHtml(place.name)}</strong><span>${distance}${place.address?` · ${escapeHtml(place.address)}`:''}</span></div><a class="tiny" href="${directions}" target="_blank" rel="noopener noreferrer">길찾기</a></li>`;
+    return `<li><div><strong>${escapeHtml(place.name)}</strong><span>${distance}${place.address?` · ${escapeHtml(place.address)}`:''}</span></div><nav class="nearby-actions"><a class="tiny" href="${detail}" target="_blank" rel="noopener noreferrer">지도 상세</a><a class="tiny" href="${directions}" target="_blank" rel="noopener noreferrer">길찾기</a></nav></li>`;
   }).join('')}</ul>`;
 }
 
