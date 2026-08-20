@@ -39,3 +39,18 @@ test('all interactive help executors and responsive styles are wired',()=>{
   assert.match(css,/\.help-steps/);
   assert.match(css,/\.help-action-row/);
 });
+
+test('place help renders an in-app nearby list instead of opening a blank tab',()=>{
+  assert.doesNotMatch(source,/window\.open\('about:blank'/);
+  assert.match(source,/data-nearby-results/);
+  assert.match(source,/fetchNearbyPlaces/);
+  assert.match(source,/overpass-api\.de\/api\/interpreter/);
+  assert.match(source,/가까운 순서/);
+  assert.match(css,/\.nearby-list/);
+});
+
+test('nearby place distance uses meters',()=>{
+  const distanceMeters=extractedFunction('distanceMeters');
+  assert.equal(distanceMeters(37.5665,126.978,37.5665,126.978),0);
+  assert.ok(distanceMeters(37.5665,126.978,37.5759,126.9768)>1000);
+});
