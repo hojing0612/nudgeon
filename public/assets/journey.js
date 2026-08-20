@@ -1032,7 +1032,7 @@ function helpDurationSeconds(help){
 function helpActionMarkup(help,i){
   const label=escapeHtml(help.primaryAction||'시작하기');
   if(help.type==='timer')return `<button class="btn help-primary" data-help-timer="${i}" data-seconds="${helpDurationSeconds(help)}">${label}</button><output class="help-timer" data-help-timer-output="${i}" aria-live="polite"></output>`;
-  if(['map','place'].includes(help.type))return `<button class="btn help-primary" data-help-map="${i}">${label}</button>`;
+  if(['map','place'].includes(help.type))return `<button class="btn help-primary" data-help-map="${i}">${label}</button><div class="nearby-results" data-nearby-results="${i}" aria-live="polite"><p class="nearby-privacy">위치 권한은 주변 장소를 찾을 때만 사용하며 NudgeOn에는 저장하지 않아요.</p></div>`;
   if(['video','link'].includes(help.type))return `<button class="btn help-primary" data-help-link="${i}">${label}</button>`;
   if(['message','draft'].includes(help.type))return `<button class="btn help-primary" data-help-copy="${i}">${label}</button>`;
   if(help.type==='photo')return `<button class="btn help-primary" data-help-photo="${i}">${label}</button><input class="hide" type="file" accept="image/*" capture="environment" data-help-photo-input="${i}"><div class="help-photo-preview" data-help-photo-preview="${i}"></div>`;
@@ -1090,17 +1090,86 @@ function mapSearchUrl(keyword,position){
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
-function openHelpMap(step,button){
-  const keyword=step?.help?.searchKeyword||step?.text||'주변 장소';
-  const popup=window.open('about:blank','_blank');
-  if(popup)popup.opener=null;
-  const finish=position=>{
+function placeCategoryFor(keyword){
+  const text=String(keyword||'').toLowerCase();
+  if(/카페|커피|cafe|coffee/.test(text))return {key:'amenity',value:'cafe',label:'카페'};
+  if(/공원|산책|park/.test(text))return {key:'leisure',value:'park',label:'공원'};
+  if(/편의점|convenience/.test(text))return {key:'shop',value:'convenience',label:'편의점'};
+  if(/도서관|library/.test(text))return {key:'amenity',value:'library',label:'도서관'};
+  return null;
+}
+
+function distanceMeters(lat1,lon1,lat2,lon2){
+  const rad=value=>value*Math.PI/180;
+  const dLat=rad(lat2-lat1),dLon=rad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(rad(lat1))*Math.cos(rad(lat2))*Math.sin(dLon/2)**2;
+  return Math.round(6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+function placeAddress(tags={}){
+  return [tags['addr:city']||tags['addr:district'],tags['addr:street'],tags['addr:housenumber']].filter(Boolean).join(' ') || tags['addr:full'] || '';
+}
+
+async function fetchNearbyPlaces(keyword,latitude,longitude){
+  const category=placeCategoryFor(keyword);
+  if(!category)return [];
+  const query=`[out:json][timeout:8];nwr["${category.key}"="${category.value}"](around:3500,${latitude},${longitude});out tags center 30;`;
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),9000);
+  try{
+    const response=await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`,{signal:controller.signal});
+    if(!response.ok)throw new Error(`장소 검색 실패: ${response.status}`);
+    const data=await response.json();
+    return (data.elements||[]).map(item=>{
+      const lat=Number(item.lat??item.center?.lat),lon=Number(item.lon??item.center?.lon);
+      return {name:String(item.tags?.name||'').trim(),address:placeAddress(item.tags),lat,lon,
+        distance:Number.isFinite(lat)&&Number.isFinite(lon)?distanceMeters(latitude,longitude,lat,lon):Infinity};
+    }).filter(place=>place.name&&Number.isFinite(place.lat)&&Number.isFinite(place.lon))
+      .sort((a,b)=>a.distance-b.distance).slice(0,5);
+  }finally{clearTimeout(timeout);}
+}
+
+function nearbyPlacesMarkup(places,keyword,position){
+  if(!places.length){
     const url=mapSearchUrl(keyword,position);
-    if(popup)popup.location.href=url;else window.location.href=url;
-  };
+    return `<p class="nearby-status">근처 목록을 불러오지 못했어요. 지도 검색으로 확인할 수 있어요.</p><a class="tiny nearby-map-link" href="${url}" target="_blank" rel="noopener noreferrer">지도에서 검색하기</a>`;
+  }
+  return `<div class="nearby-head"><b>가까운 순서</b><span>${places.length}곳</span></div><ul class="nearby-list">${places.map(place=>{
+    const destination=`${place.lat},${place.lon}`;
+    const detail=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`;
+    const directions=`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}&travelmode=walking`;
+    const distance=place.distance<1000?`${place.distance}m`:`${(place.distance/1000).toFixed(1)}km`;
+    return `<li><div><strong>${escapeHtml(place.name)}</strong><span>${distance}${place.address?` · ${escapeHtml(place.address)}`:''}</span></div><nav class="nearby-actions"><a class="tiny" href="${detail}" target="_blank" rel="noopener noreferrer">지도 상세</a><a class="tiny" href="${directions}" target="_blank" rel="noopener noreferrer">길찾기</a></nav></li>`;
+  }).join('')}</ul>`;
+}
+
+async function openHelpMap(step,button){
+  const keyword=step?.help?.searchKeyword||step?.text||'주변 장소';
+  const i=Number(button.dataset.helpMap),results=document.querySelector(`[data-nearby-results="${i}"]`);
   button.textContent='위치를 확인하는 중…';
-  if(!navigator.geolocation){finish(null);return;}
-  navigator.geolocation.getCurrentPosition(finish,()=>finish(null),{enableHighAccuracy:false,timeout:6000,maximumAge:300000});
+  button.disabled=true;
+  if(results)results.innerHTML='<p class="nearby-status">현재 위치를 확인하고 있어요…</p>';
+  if(!navigator.geolocation){
+    if(results)results.innerHTML=nearbyPlacesMarkup([],keyword,null);
+    button.textContent='다시 찾아보기';button.disabled=false;return;
+  }
+  navigator.geolocation.getCurrentPosition(async position=>{
+    try{
+      button.textContent='주변 장소를 찾는 중…';
+      const {latitude,longitude}=position.coords;
+      const places=await fetchNearbyPlaces(keyword,latitude,longitude);
+      if(results)results.innerHTML=nearbyPlacesMarkup(places,keyword,position);
+      if(places.length)revealHelpCompletion(i);
+    }catch(error){
+      console.warn('주변 장소 검색 실패:',error);
+      if(results)results.innerHTML=nearbyPlacesMarkup([],keyword,position);
+    }finally{button.textContent='목록 새로고침';button.disabled=false;}
+  },error=>{
+    const message=error?.code===1?'위치 권한이 꺼져 있어요. 허용한 뒤 다시 눌러 주세요.':'현재 위치를 확인하지 못했어요.';
+    const url=mapSearchUrl(keyword,null);
+    if(results)results.innerHTML=`<p class="nearby-status">${message}</p><a class="tiny nearby-map-link" href="${url}" target="_blank" rel="noopener noreferrer">지도에서 검색하기</a>`;
+    button.textContent='다시 찾아보기';button.disabled=false;
+  },{enableHighAccuracy:false,timeout:8000,maximumAge:300000});
 }
 
 async function copyHelpText(step,button){

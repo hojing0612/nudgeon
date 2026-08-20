@@ -47,6 +47,7 @@ const REHEARSAL_HISTORY_KEY = 'nudgeon.rehearsal-history.v1';
 const RESOURCE_CONTEXT_KEY = 'nudgeon.rehearsal-context.v1';
 const CONNECT_FOCUS_KEY = 'nudgeon.connect-focus-resource.v1';
 const JOURNEY_KEY = 'nudgeon.journey.v1';
+const MICROSTEP_REHEARSAL_REQUEST_KEY = 'nudgeon.rehearsal-request.v1';
 
 type ResourceRehearsalContext = {
   resourceId: string;
@@ -100,6 +101,18 @@ function loadJourneyContext() {
     return readJourneySnapshot(localStorage.getItem(JOURNEY_KEY));
   } catch {
     return readJourneySnapshot(null);
+  }
+}
+
+function loadMicrostepRehearsalRequest(): { scenario: string; title: string } | null {
+  try {
+    const saved = JSON.parse(localStorage.getItem(MICROSTEP_REHEARSAL_REQUEST_KEY) || 'null');
+    if (!saved?.scenario) return null;
+    const createdAt = Date.parse(String(saved.createdAt || ''));
+    if (Number.isFinite(createdAt) && Date.now() - createdAt > 30 * 60 * 1000) return null;
+    return { scenario: String(saved.scenario), title: String(saved.title || '') };
+  } catch {
+    return null;
   }
 }
 
@@ -319,26 +332,30 @@ async function askAIForRewrite(scenario: Scenario, userText: string): Promise<st
 function App() {
   const journeyContextRef = useRef(loadJourneyContext());
   const journeyContext = journeyContextRef.current;
+  const microstepRequestRef = useRef(loadMicrostepRehearsalRequest());
+  const microstepRequest = microstepRequestRef.current;
+  const microstepScenario = SCENARIOS.find((item) => item.id === microstepRequest?.scenario) || null;
   const personalizedScenarioRef = useRef(buildPersonalizedScenario(journeyContext));
   const personalizedScenario = personalizedScenarioRef.current;
-  const recommendedScenarioId = personalizedScenario?.id || recommendScenarioId(journeyContext);
+  const recommendedScenarioId = microstepScenario?.id || personalizedScenario?.id || recommendScenarioId(journeyContext);
   const restoredProgressRef = useRef<RehearsalProgress | null>(loadRehearsalProgress());
   const restoredProgress = restoredProgressRef.current;
   const resourceContextRef = useRef<ResourceRehearsalContext | null>(loadResourceRehearsalContext());
   const resourceContext = resourceContextRef.current;
-  const applicableProgress = resourceContext && restoredProgress?.scenarioId !== resourceContext.scenario.id
+  const requestedScenarioId = resourceContext?.scenario.id || microstepScenario?.id;
+  const applicableProgress = requestedScenarioId && restoredProgress?.scenarioId !== requestedScenarioId
     ? null
     : restoredProgress;
   const rehearsalIdRef = useRef(createLocalId());
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [scenario, setScenario] = useState<Scenario | null>(() =>
-    resourceContext?.scenario || (applicableProgress?.scenarioId === personalizedScenario?.id ? personalizedScenario : null)
+    resourceContext?.scenario || microstepScenario || (applicableProgress?.scenarioId === personalizedScenario?.id ? personalizedScenario : null)
       || SCENARIOS.find((item) => item.id === applicableProgress?.scenarioId) || null);
   const [difficulty, setDifficulty] = useState<RehearsalDifficulty>(() =>
     applicableProgress?.difficulty || recommendDifficulty(journeyContext.level));
   const difficultyTouchedRef = useRef(false);
-  const [phase, setPhase] = useState<Phase>(resourceContext && !applicableProgress ? 'prep' : applicableProgress?.phase || 'idle');
+  const [phase, setPhase] = useState<Phase>((resourceContext || microstepScenario) && !applicableProgress ? 'prep' : applicableProgress?.phase || 'idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [currentLine, setCurrentLine] = useState('');
@@ -351,6 +368,10 @@ function App() {
   const [burdenAfter, setBurdenAfter] = useState<number | null>(applicableProgress?.burdenAfter ?? null);
   const [readiness, setReadiness] = useState<Readiness>(applicableProgress?.readiness ?? null);
   const [selectedNextStep, setSelectedNextStep] = useState<string | null>(applicableProgress?.selectedNextStep ?? null);
+
+  useEffect(() => {
+    if (microstepRequest) localStorage.removeItem(MICROSTEP_REHEARSAL_REQUEST_KEY);
+  }, [microstepRequest]);
 
   const [promptHelpCount, setPromptHelpCount] = useState(applicableProgress?.promptHelpCount || 0);
   const [rewriteCount, setRewriteCount] = useState(applicableProgress?.rewriteCount || 0);

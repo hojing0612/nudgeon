@@ -8,7 +8,7 @@ import {
   recommendScenarioId,
   readJourneySnapshot,
 } from '../src/lib/rehearsalPersonalization.ts';
-import { buildPersonalizedScenario } from '../src/data/opponents.ts';
+import { buildPersonalizedScenario, SCENARIOS } from '../src/data/opponents.ts';
 
 test('완료한 마이크로스텝을 우선해 연습 상황을 추천한다', () => {
   const snapshot = readJourneySnapshot(JSON.stringify({
@@ -17,6 +17,13 @@ test('완료한 마이크로스텝을 우선해 연습 상황을 추천한다', 
     selectedMicroIndex: 0,
   }));
   assert.equal(recommendScenarioId(snapshot), 'friend');
+});
+
+test('카페 주문과 도서관 질문을 각각의 실제 연습 상황으로 연결한다', () => {
+  assert.equal(recommendScenarioId({ level: 4, barrier: '', barrierLabel: '', vision: '', microstepText: '직원에게 메뉴 이름만 말하기', helpRequest: '', goalTags: [] }), 'cafe');
+  assert.equal(recommendScenarioId({ level: 4, barrier: '', barrierLabel: '', vision: '', microstepText: '도서관에서 책 위치 질문하기', helpRequest: '', goalTags: [] }), 'library');
+  assert.ok(SCENARIOS.some((scenario) => scenario.id === 'cafe'));
+  assert.ok(SCENARIOS.some((scenario) => scenario.id === 'library'));
 });
 
 test('높은 부담도에는 가벼운 난이도를 추천한다', () => {
