@@ -213,6 +213,7 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
 .nearby-list strong{overflow:hidden;color:var(--ink);font-size:13px;text-overflow:ellipsis;white-space:nowrap}
 .nearby-list span{color:var(--ink-soft);font-size:10px;line-height:1.4}
 .nearby-list .tiny,.nearby-map-link{flex:0 0 auto;text-decoration:none}
+.nearby-actions{display:flex;flex:0 0 auto;gap:6px}
 .nearby-map-link{display:inline-flex;margin-top:8px}
 .level-chip{
   display:inline-flex; align-items:center; gap:6px; margin-top:5px; padding:3px 8px;
@@ -223,7 +224,7 @@ p.lede{font-size:16px; color:var(--ink-soft); margin:0 0 30px; max-width:56ch}
   .step-item{grid-template-columns:24px 1fr}.step-actions{grid-column:2; flex-direction:row; align-items:center}
   .support-panel{margin-left:0}.support-grid{grid-template-columns:1fr}
   .help-action-row{align-items:stretch;flex-direction:column}.help-primary{width:100%}.help-timer{text-align:center}
-  .nearby-list li{align-items:flex-start}.nearby-list .tiny{margin-top:1px}
+  .nearby-list li{align-items:flex-start;flex-direction:column}.nearby-actions{width:100%}.nearby-actions .tiny{flex:1;margin-top:1px;text-align:center}
 }
 
 /* 리허설 */
