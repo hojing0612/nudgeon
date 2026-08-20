@@ -16,3 +16,10 @@ test('습관 체크 후 현재 화면 위치와 체크박스 포커스를 복원
   assert.match(source,/window\.scrollTo\(scrollPosition\.x,scrollPosition\.y\)/);
   assert.match(source,/focus\(\{preventScroll:true\}\)/);
 });
+
+test('직접 입력과 추천 습관 추가 후에도 현재 화면 위치를 유지한다',()=>{
+  assert.match(source,/const renderHabitsPreservingScroll=\(\)=>\{/);
+  assert.match(source,/requestAnimationFrame\(\(\)=>window\.scrollTo\(scrollPosition\.x,scrollPosition\.y\)\)/);
+  const habitAddHandlers=source.match(/renderHabitsPreservingScroll\(\)/g)||[];
+  assert.equal(habitAddHandlers.length,2);
+});
