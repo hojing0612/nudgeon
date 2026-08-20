@@ -54,6 +54,12 @@ type ResourceRehearsalContext = {
   resourceTitle: string;
   organization: string;
   applicationUrl: string;
+  applicationMethod: string;
+  requiredDocuments: string;
+  periodText: string;
+  recommendationReason: string;
+  firstActions: string[];
+  keyFacts: string[];
   returnTo: string;
   scenario: Scenario;
 };
@@ -69,25 +75,46 @@ function loadResourceRehearsalContext(): ResourceRehearsalContext | null {
     if (!resourceId || !saved || saved.resourceId !== resourceId || !saved.resource?.title) return null;
     const resourceTitle = String(saved.resource.title);
     const organization = String(saved.resource.organization || '운영기관');
+    const applicationMethod = String(saved.resource.applicationMethod || '기관 문의 후 안내');
+    const requiredDocuments = String(saved.resource.requiredDocuments || '담당자에게 확인');
+    const periodText = String(saved.resource.periodText || '모집 일정을 담당자에게 확인');
+    const recommendationReason = String(saved.resource.recommendationReason || '현재 조건과 필요한 지원을 기준으로 추천한 프로그램이에요.');
+    const firstActions = Array.isArray(saved.resource.firstActions)
+      ? saved.resource.firstActions.map(String).filter(Boolean).slice(0, 3)
+      : ['지원 내용 확인하기', '궁금한 점 하나 고르기', '담당자 문의 문장 연습하기'];
+    const keyFacts = Array.isArray(saved.resource.keyFacts)
+      ? saved.resource.keyFacts.map(String).filter(Boolean).slice(0, 4)
+      : [];
+    const realisticTopics = [
+      periodText ? '모집 일정' : '',
+      applicationMethod ? '신청 방법' : '',
+      requiredDocuments ? '제출 서류' : '',
+    ].filter(Boolean).join(', ');
     return {
       resourceId,
       resourceTitle,
       organization,
       applicationUrl: String(saved.resource.applicationUrl || ''),
+      applicationMethod,
+      requiredDocuments,
+      periodText,
+      recommendationReason,
+      firstActions,
+      keyFacts,
       returnTo: '/home.html?screen=connect',
       scenario: {
         id: `resource:${resourceId}`,
         title: `${resourceTitle} 문의 연습`,
-        who: `${organization}의 ${resourceTitle} 담당자`,
+        who: `${organization}의 ${resourceTitle} 담당자. 신청 방법은 ${applicationMethod}, 모집 안내는 ${periodText}입니다.`,
         open: `안녕하세요, ${organization} ${resourceTitle} 담당자입니다. 어떤 점이 궁금하신가요?`,
         portrait: SCENARIOS.find((item) => item.id === 'apply')?.portrait || '',
         opponentName: '지원 담당자',
         opponentRole: organization,
-        goals: ['문의 목적 말하기', '신청 자격이나 절차 확인하기', '다음에 준비할 것 확인하기'],
+        goals: ['문의 목적 말하기', '신청 자격과 일정을 확인하기', '신청 방법이나 제출 서류 확인하기'],
         openings: {
           gentle: `안녕하세요, ${resourceTitle} 담당자입니다. 문의하고 싶다고 한 말씀만 해주셔도 제가 차근차근 여쭤볼게요.`,
           standard: `안녕하세요, ${organization} ${resourceTitle} 담당자입니다. 어떤 점이 궁금하신가요?`,
-          realistic: `안녕하세요, ${resourceTitle} 담당자입니다. 신청 자격, 일정, 제출 서류 중 어떤 내용을 먼저 확인하고 싶으신가요?`,
+          realistic: `안녕하세요, ${resourceTitle} 담당자입니다. ${realisticTopics || '신청 자격과 절차'} 중 어떤 내용을 먼저 확인하고 싶으신가요?`,
         },
       },
     };
@@ -910,9 +937,21 @@ function App() {
 
               {isResourceScenario && resourceContext && (
                 <div className="card" style={{ borderColor: 'var(--sage)', background: 'var(--mist)' }}>
-                  <p style={{ margin: '0 0 4px', fontSize: '12px', color: 'var(--ink-soft)' }}>정책 상세에서 이어온 맞춤 연습</p>
+                  <p style={{ margin: '0 0 4px', fontSize: '12px', color: 'var(--ink-soft)' }}>이 기관에 맞춘 문의 연습</p>
                   <p style={{ margin: '0', fontSize: '15px', fontWeight: 600 }}>{resourceContext.resourceTitle}</p>
-                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--ink-soft)' }}>{resourceContext.organization} 담당자에게 신청 자격과 절차를 문의하는 상황이에요.</p>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--ink-soft)' }}>{resourceContext.organization} 담당자에게 실제 신청 방법과 준비할 내용을 묻는 상황이에요.</p>
+                  <div className="resource-rehearsal-reason">
+                    <b>이 지원을 추천한 이유</b>
+                    <span>{resourceContext.recommendationReason}</span>
+                  </div>
+                  <ol className="resource-rehearsal-actions">
+                    {resourceContext.firstActions.map((action) => <li key={action}>{action}</li>)}
+                  </ol>
+                  <dl className="resource-rehearsal-facts">
+                    <div><dt>신청 방법</dt><dd>{resourceContext.applicationMethod}</dd></div>
+                    <div><dt>모집 일정</dt><dd>{resourceContext.periodText}</dd></div>
+                    <div><dt>준비 서류</dt><dd>{resourceContext.requiredDocuments}</dd></div>
+                  </dl>
                 </div>
               )}
 
