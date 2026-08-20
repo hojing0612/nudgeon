@@ -26,3 +26,10 @@ test('resource context carries practical application facts into rehearsal', () =
   assert.match(rehearsalSource, /이 기관에 맞춘 문의 연습/);
   assert.match(rehearsalSource, /신청 방법은 \$\{applicationMethod\}/);
 });
+
+test('returning from rehearsal restores the selected policy detail without refetching the list first', () => {
+  assert.match(connectSource, /detailResource:detailSnapshot\(resource\)/);
+  assert.match(connectSource, /if\(cachedDetail\)\{st\.detail=cachedDetail;st\.view='detail'/);
+  assert.match(connectSource, /if\(st\.view==='list'\)load\(\)/);
+  assert.match(connectSource, /st\.items\.length\?render\(\):load\(\)/);
+});
