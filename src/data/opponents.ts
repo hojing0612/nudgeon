@@ -16,6 +16,36 @@ export type Scenario = {
 
 export const SCENARIOS: Scenario[] = [
   {
+    id: 'cafe',
+    title: '카페에서 음료 주문하기',
+    who: '카페 주문을 받는 직원',
+    open: '안녕하세요. 주문 도와드릴게요. 어떤 음료로 드릴까요?',
+    portrait: 'https://images.pexels.com/photos/3769021/pexels-photo-3769021.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+    opponentName: '한지우',
+    opponentRole: '카페 직원',
+    goals: ['원하는 메뉴 말하기', '온도나 크기 질문에 답하기', '포장 여부를 말하고 주문 마무리하기'],
+    openings: {
+      gentle: '안녕하세요. 메뉴 이름 하나만 말씀해 주셔도 괜찮아요. 어떤 음료로 드릴까요?',
+      standard: '안녕하세요. 주문 도와드릴게요. 어떤 음료로 드릴까요?',
+      realistic: '안녕하세요. 주문 도와드릴게요. 음료와 사이즈, 포장 여부를 말씀해 주세요.',
+    },
+  },
+  {
+    id: 'library',
+    title: '도서관에서 책 위치 질문하기',
+    who: '도서관 안내 데스크 직원',
+    open: '안녕하세요. 찾으시는 책이나 자료가 있으신가요?',
+    portrait: 'https://images.pexels.com/photos/5905445/pexels-photo-5905445.jpeg?auto=compress&cs=tinysrgb&h=650&w=940',
+    opponentName: '윤서진',
+    opponentRole: '도서관 직원',
+    goals: ['찾는 책 제목 말하기', '책 위치나 청구기호 묻기', '안내를 확인하고 감사 인사하기'],
+    openings: {
+      gentle: '안녕하세요. 책 제목만 보여주셔도 괜찮아요. 어떤 책을 찾고 계신가요?',
+      standard: '안녕하세요. 찾으시는 책이나 자료가 있으신가요?',
+      realistic: '안녕하세요. 책 제목이나 저자명을 알려주시면 위치를 확인해드릴게요.',
+    },
+  },
+  {
     id: 'center',
     title: '상담센터에 처음 전화하기',
     who: '대학 학생상담센터 상담 접수 직원',
@@ -85,6 +115,8 @@ type PersonalizationSource = {
 
 function sourceScenarioId(source: PersonalizationSource): string {
   const text = `${source.helpRequest} ${source.microstepText}`;
+  if (/카페|메뉴|음료|주문|키오스크/.test(text)) return 'cafe';
+  if (/도서관|책 위치|청구기호/.test(text)) return 'library';
   if (/교수|메일|학교|수업|과제/.test(text)) return 'prof';
   if (/친구|답장|메시지|연락/.test(text)) return 'friend';
   if (/신청|기관|지원|프로그램|취업|구직|면접/.test(text)) return 'apply';
@@ -128,6 +160,16 @@ export type FallbackExamples = {
 };
 
 export const FALLBACK_EXAMPLES: Record<string, FallbackExamples> = {
+  cafe: {
+    minimal: '아이스 아메리카노 한 잔 주세요.',
+    normal: '아이스 아메리카노 한 잔, 작은 사이즈로 주세요.',
+    honest: '주문이 조금 서툴러서요. 아이스 아메리카노 한 잔 포장해 주세요.',
+  },
+  library: {
+    minimal: '이 책은 어디에 있나요?',
+    normal: '안녕하세요. 이 책의 위치를 찾고 있는데 도와주실 수 있을까요?',
+    honest: '책을 찾는 방법이 익숙하지 않아서요. 이 책이 있는 위치를 알려주실 수 있을까요?',
+  },
   center: {
     minimal: '안녕하세요, 상담을 신청하고 싶어서 연락했어요.',
     normal: '안녕하세요, 요즘 밖에 나가거나 사람을 만나는 게 어려워서 상담을 받아보고 싶어요.',
@@ -157,6 +199,16 @@ export type NextStepOption = {
 };
 
 export const NEXT_STEPS: Record<string, NextStepOption[]> = {
+  cafe: [
+    { id: 'copy-order', label: '주문 문장 복사하기', description: '연습에서 정한 메뉴와 주문 문장을 복사해요.' },
+    { id: 'check-cafe', label: '카페 위치 다시 보기', description: '선택한 카페의 위치를 확인해요.' },
+    { id: 'save-only', label: '오늘은 메뉴만 정하기', description: '실제 주문은 다음에 해도 괜찮아요.' },
+  ],
+  library: [
+    { id: 'copy-question', label: '질문 문장 복사하기', description: '책 위치를 묻는 문장을 복사해요.' },
+    { id: 'save-title', label: '책 제목 저장하기', description: '찾을 책 제목만 메모해 둬요.' },
+    { id: 'save-only', label: '오늘은 문장만 준비하기', description: '도서관 방문은 다음에 해도 괜찮아요.' },
+  ],
   center: [
     { id: 'copy-inquiry', label: '문의 문장 복사하기', description: '연습에서 쓴 문장을 클립보드에 복사해요.' },
     { id: 'check-phone', label: '전화번호 확인하기', description: '상담센터 연락처를 확인하고 저장해요.' },
