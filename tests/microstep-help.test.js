@@ -46,6 +46,7 @@ test('place help renders an in-app nearby list instead of opening a blank tab',(
   assert.match(source,/fetchNearbyPlaces/);
   assert.match(source,/overpass-api\.de\/api\/interpreter/);
   assert.match(source,/가까운 순서/);
+  assert.match(source,/지도 상세/);
   assert.match(css,/\.nearby-list/);
 });
 
