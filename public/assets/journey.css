@@ -371,19 +371,36 @@ body{background:var(--paper);line-height:1.6}
 .window-bar.vertical{left:100px;top:0;width:4px;height:264px}.window-bar.horizontal{left:0;top:119px;width:204px;height:4px}
 .window-note{position:relative;z-index:4;margin-top:10px;font-family:inherit;font-size:12px;letter-spacing:0;color:#6F7067}
 
+/* Figma 27:2 · 4단계는 열린 창과 다리 너머의 불빛, 5단계는 밝은 길의 풍경입니다. */
+.app[data-window-screen="connect"] .window-pane{background:linear-gradient(180deg,#B8C7CE 0%,#E6CE93 40%,#B49356 78%,#CFC3A5 100%)}
+.app[data-window-screen="connect"] .daylight{opacity:1}
+.app[data-window-screen="connect"] .curtain.l{left:0;width:20px;transform:none}
+.app[data-window-screen="connect"] .curtain.r{left:184px;width:20px;transform:none}
+.app[data-window-screen="connect"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E}
+.app[data-window-screen="connect"] .window-signpost{display:block;left:143px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
+.app[data-window-screen="record"] .window-glow{left:-25px;top:-35px;width:310px;height:370px}
+.app[data-window-screen="record"] .window-pane{background:linear-gradient(180deg,#AEC7DA 0%,#E8D092 39%,#C8DDBB 70%,#BBB698 100%)}
+.app[data-window-screen="record"] .daylight{opacity:1}
+.app[data-window-screen="record"] .sun-large{display:block;left:122px;top:26px;width:36px;height:36px;border-radius:50%;background:#DDB666}
+.app[data-window-screen="record"] .signpost-light{display:block;left:139px;top:100px;width:24px;height:24px;border-radius:50%;background:#F4D88E}
+.app[data-window-screen="record"] .window-signpost{display:block;left:143px;top:119px;width:4px;height:30px;border-radius:2px;background:rgba(128,107,84,.38)}
+.app[data-window-screen="record"] .window-long-path{display:block;left:41px;top:216px;width:122px;height:4px;border-radius:2px;background:rgba(232,219,181,.4)}
+
 /* 페이지 전환으로 새로 열리는 4·5단계도 직전 단계의 커튼 위치에서 이어집니다. */
-@keyframes classic-stage4-left{from{transform:translateX(-67.2px)}to{transform:translateX(-89.6px)}}
-@keyframes classic-stage4-right{from{transform:translateX(67.2px)}to{transform:translateX(89.6px)}}
-@keyframes classic-stage4-light{from{opacity:.64}to{opacity:.82}}
-@keyframes classic-stage5-left{from{transform:translateX(-89.6px)}to{transform:translateX(-112px)}}
-@keyframes classic-stage5-right{from{transform:translateX(89.6px)}to{transform:translateX(112px)}}
-@keyframes classic-stage5-light{from{opacity:.82}to{opacity:1}}
+@keyframes classic-stage4-left{from{width:102px;transform:translateX(-67.2px)}to{width:20px;transform:translateX(0)}}
+@keyframes classic-stage4-right{from{left:102px;width:102px;transform:translateX(67.2px)}to{left:184px;width:20px;transform:translateX(0)}}
+@keyframes classic-stage4-light{from{opacity:.64}to{opacity:1}}
+@keyframes classic-stage4-signpost{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes classic-stage5-left{from{width:20px;opacity:1;transform:none}to{width:0;opacity:0;transform:translateX(-20px)}}
+@keyframes classic-stage5-right{from{left:184px;width:20px;opacity:1;transform:none}to{left:204px;width:0;opacity:0;transform:translateX(20px)}}
+@keyframes classic-stage5-sun{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 .app[data-window-screen="connect"] .curtain.l{animation:classic-stage4-left 1.1s cubic-bezier(.22,.9,.3,1) both}
 .app[data-window-screen="connect"] .curtain.r{animation:classic-stage4-right 1.1s cubic-bezier(.22,.9,.3,1) both}
 .app[data-window-screen="connect"] .daylight{animation:classic-stage4-light 1.1s ease both}
+.app[data-window-screen="connect"] .signpost-light,.app[data-window-screen="connect"] .window-signpost{animation:classic-stage4-signpost .7s .25s ease both}
 .app[data-window-screen="record"] .curtain.l{animation:classic-stage5-left 1.1s cubic-bezier(.22,.9,.3,1) both}
 .app[data-window-screen="record"] .curtain.r{animation:classic-stage5-right 1.1s cubic-bezier(.22,.9,.3,1) both}
-.app[data-window-screen="record"] .daylight{animation:classic-stage5-light 1.1s ease both}
+.app[data-window-screen="record"] .sun-large,.app[data-window-screen="record"] .window-long-path{animation:classic-stage5-sun .8s .25s ease both}
 @media (prefers-reduced-motion:reduce){.window-illustration *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 .rail-foot{display:none}
 .stage{display:block;padding:0;min-width:0}
