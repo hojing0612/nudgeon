@@ -837,19 +837,27 @@ function App() {
       <div className="workspace">
         <aside className="rail" aria-label="현재 단계 창문">
           <div className="window-wrap">
-          <div className={`window-illustration rehearsal-window ${scenario ? 'has-scenario' : ''}`} aria-hidden="true">
+          <div className="window-illustration rehearsal-window forest-stage-3" aria-hidden="true">
             <div className="window-glow" />
             <div className="window-frame">
-              <div className="window-pane daylight">
-                <div className="window-ground" />
-                <div className="window-path" />
-                <div className="window-bridge" />
-                <div className="window-support support-left" />
-                <div className="window-support support-right" />
-                <div className="curtain l" />
-                <div className="curtain r" />
-                <div className="window-bar vertical" />
-                <div className="window-bar horizontal" />
+              <div className="window-pane">
+                <div className="forest-sun" />
+                <div className="forest-light-ray" />
+                <div className="forest-hill forest-hill-distant" />
+                <div className="forest-hill forest-hill-near" />
+                <div className="forest-path" />
+                <div className="forest-grove forest-grove-left">
+                  <div className="forest-tree forest-tree-a" />
+                  <div className="forest-tree forest-tree-b" />
+                  <div className="forest-tree forest-tree-c" />
+                </div>
+                <div className="forest-grove forest-grove-right">
+                  <div className="forest-tree forest-tree-a" />
+                  <div className="forest-tree forest-tree-b" />
+                  <div className="forest-tree forest-tree-c" />
+                </div>
+                <div className="forest-mullion forest-mullion-vertical" />
+                <div className="forest-mullion forest-mullion-horizontal" />
               </div>
             </div>
           </div>
