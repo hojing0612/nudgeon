@@ -1037,16 +1037,17 @@ function helpActionMarkup(help,i){
   if(['message','draft'].includes(help.type))return `<button class="btn help-primary" data-help-copy="${i}">${label}</button>`;
   if(help.type==='photo')return `<button class="btn help-primary" data-help-photo="${i}">${label}</button><input class="hide" type="file" accept="image/*" capture="environment" data-help-photo-input="${i}"><div class="help-photo-preview" data-help-photo-preview="${i}"></div>`;
   if(help.type==='rehearsal')return `<button class="btn help-primary" data-help-rehearsal="${i}">${label}</button>`;
-  return `<button class="btn help-primary" data-help-start="${i}">${label}</button>`;
+  return '';
 }
 
 function renderMicrostepHelp(s,i){
   const help=s.help;
+  const action=helpActionMarkup(help,i);
   return `<div class="support-panel micro-help" data-help-panel="${i}">
     <div class="support-head"><div><div class="support-title">${escapeHtml(help.title||s.text)}</div><p class="support-desc">${escapeHtml(help.description)}</p></div>
     <button class="tiny" data-support="${i}">닫기</button></div>
     ${help.steps.length?`<ol class="help-steps">${help.steps.map((step,j)=>`<li><button type="button" data-help-check="${i}:${j}" aria-pressed="false"><span>${j+1}</span>${escapeHtml(step)}</button></li>`).join('')}</ol>`:''}
-    <div class="help-action-row">${helpActionMarkup(help,i)}</div>
+    ${action?`<div class="help-action-row">${action}</div>`:''}
     ${help.fallbackAction?`<p class="help-fallback"><b>오늘은 더 작게</b>${escapeHtml(help.fallbackAction)}</p>`:''}
     ${help.completionMessage?`<p class="help-completion" data-help-completion="${i}">${escapeHtml(help.completionMessage)}</p>`:''}
   </div>`;
@@ -1613,9 +1614,6 @@ function bind(){
     const pressed=b.getAttribute('aria-pressed')==='true';
     b.setAttribute('aria-pressed',String(!pressed));
     if(!pressed && [...stage.querySelectorAll(`[data-help-check^="${i}:"]`)].every(item=>item.getAttribute('aria-pressed')==='true'))revealHelpCompletion(i);
-  });
-  stage.querySelectorAll('[data-help-start]').forEach(b=>b.onclick=()=>{
-    b.textContent='시작했어요';b.closest('[data-help-panel]')?.classList.add('started');revealHelpCompletion(Number(b.dataset.helpStart));
   });
   stage.querySelectorAll('[data-help-timer]').forEach(b=>b.onclick=()=>startHelpTimer(b));
   stage.querySelectorAll('[data-help-link]').forEach(b=>b.onclick=()=>{const i=Number(b.dataset.helpLink);openHelpLink(state.micro[i]);revealHelpCompletion(i);});

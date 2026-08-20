@@ -32,9 +32,11 @@ test('timer duration supports Korean minute and second labels',()=>{
 });
 
 test('all interactive help executors and responsive styles are wired',()=>{
-  for(const hook of ['data-help-timer','data-help-map','data-help-link','data-help-copy','data-help-photo','data-help-rehearsal','data-help-start']){
+  for(const hook of ['data-help-timer','data-help-map','data-help-link','data-help-copy','data-help-photo','data-help-rehearsal']){
     assert.match(source,new RegExp(hook));
   }
+  assert.doesNotMatch(source,/data-help-start/);
+  assert.match(source,/every\(item=>item\.getAttribute\('aria-pressed'\)==='true'\)\)revealHelpCompletion\(i\)/);
   assert.match(source,/navigator\.geolocation\.getCurrentPosition/);
   assert.match(css,/\.help-steps/);
   assert.match(css,/\.help-action-row/);
