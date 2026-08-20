@@ -1325,8 +1325,11 @@ function vRecord(){
       habitProgress.set(date,Math.round(completed/habits.length*100));
     });
   }
-  const groupInfo=[['rehearsal','사회적 리허설','03'],['micro','마이크로스텝','02'],['connect','공공복지 연결','04']];
-  const activityHtml=groupInfo.map(([key,label,number])=>`<section class="day-activity-group activity-${key}"><div class="day-activity-head"><span>${number}</span><b>${label}</b><small>${activityGroups[key].length}</small></div>${activityGroups[key].length?`<div>${activityGroups[key].map(item=>`<p>${escapeHtml(item)}</p>`).join('')}</div>`:'<p class="muted">기록 없음</p>'}</section>`).join('');
+  const groupInfo=[['micro','마이크로스텝','02'],['rehearsal','사회적 리허설','03'],['connect','공공복지 연결','04']];
+  const activityHtml=groupInfo
+    .filter(([key])=>activityGroups[key].length)
+    .map(([key,label,number])=>`<section class="day-activity-group activity-${key}"><div class="day-activity-head"><span>${number}</span><b>${label}</b><small>${activityGroups[key].length}</small></div><div>${activityGroups[key].map(item=>`<p>${escapeHtml(item)}</p>`).join('')}</div></section>`)
+    .join('')||'<p class="muted">이 날짜에는 아직 기록이 없어요.</p>';
   const habitSuggestions=dailyHabitSuggestions(state.profile,state.micro,completionHistory,habits);
   const recommendationHtml=habitSuggestions.length?`<div class="habit-recommendations"><div><b>매일 이어갈 작은 습관</b><span>마이크로스텝과 현재 상태를 바탕으로, 반복하기 좋은 행동만 골랐어요.</span></div><div>${habitSuggestions.map(title=>`<button type="button" data-add-suggested-habit="${escapeHtml(title)}"><span>${escapeHtml(title)}</span><b>+ 추가</b></button>`).join('')}</div></div>`:'';
   const completedHabitCount=habits.filter(habit=>(habit.completedDates||[]).includes(recordDate)).length;
@@ -1394,7 +1397,23 @@ function bind(){
     if(!habits.some(habit=>habit.name.trim().toLowerCase()===name.toLowerCase()))habits.push({id:`habit-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,name,createdAt:new Date().toISOString(),completedDates:[]});
     writeRecordData(HABITS_KEY,habits);render();
   });
-  stage.querySelectorAll('[data-habit-toggle]').forEach(input=>input.onchange=()=>{const habits=recordRead(HABITS_KEY,[]),habit=habits.find(item=>item.id===input.dataset.habitToggle);if(!habit)return;const dates=new Set(habit.completedDates||[]);input.checked?dates.add(recordDate):dates.delete(recordDate);habit.completedDates=[...dates].sort();writeRecordData(HABITS_KEY,habits);render()});
+  stage.querySelectorAll('[data-habit-toggle]').forEach(input=>input.onchange=()=>{
+    const habitId=input.dataset.habitToggle;
+    const scrollPosition={x:window.scrollX,y:window.scrollY};
+    const habits=recordRead(HABITS_KEY,[]),habit=habits.find(item=>item.id===habitId);
+    if(!habit)return;
+    const dates=new Set(habit.completedDates||[]);
+    input.checked?dates.add(recordDate):dates.delete(recordDate);
+    habit.completedDates=[...dates].sort();
+    writeRecordData(HABITS_KEY,habits);
+    render();
+    requestAnimationFrame(()=>{
+      window.scrollTo(scrollPosition.x,scrollPosition.y);
+      [...stage.querySelectorAll('[data-habit-toggle]')]
+        .find(item=>item.dataset.habitToggle===habitId)
+        ?.focus({preventScroll:true});
+    });
+  });
   stage.querySelectorAll('[data-delete-habit]').forEach(button=>button.onclick=()=>{const habits=recordRead(HABITS_KEY,[]).filter(item=>item.id!==button.dataset.deleteHabit);writeRecordData(HABITS_KEY,habits);render()});
   stage.querySelectorAll('[data-open-resource]').forEach(button=>button.onclick=()=>{localStorage.setItem(CONNECT_FOCUS_KEY,JSON.stringify(button.dataset.openResource));state.screen='connect';render()});
   stage.querySelectorAll('[data-policy-file]').forEach(input=>input.onchange=async()=>{const file=input.files?.[0],resourceId=input.dataset.policyFile;if(!file)return;if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){recordFileStatus={resourceId,ok:false,message:'PDF 파일만 저장할 수 있어요.'};render();return}if(file.size>10*1024*1024){recordFileStatus={resourceId,ok:false,message:'10MB 이하 PDF를 선택해 주세요.'};render();return}try{await storePolicyFile(resourceId,file);const all=recordRead(SAVED_RESOURCES_KEY,{});if(all[resourceId])all[resourceId].fileMeta={name:file.name,size:file.size,updatedAt:new Date().toISOString()};writeRecordData(SAVED_RESOURCES_KEY,all);recordFileStatus={resourceId,ok:true,message:'PDF를 이 기기에 저장했어요.'}}catch(error){console.warn('PDF 저장 실패:',error);recordFileStatus={resourceId,ok:false,message:'PDF를 저장하지 못했어요.'}}render()});
