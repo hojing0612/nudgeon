@@ -11,7 +11,35 @@ function options(p){return `<form id="cp" class="profile-form">${p.ageMin!==null
 function profile(){return `<div class="eyebrow">04 — Connection Profile</div><h2 class="mid">지원 조건</h2><p class="lede">자가진단에서 확인하지 않은 신청 조건만 채워주세요.</p>${options(st.profile||{})}`}
 function stat(r){if(r.alwaysOpen)return '<span class="status open">상시 모집</span>';if(r.endsAt)return `<span class="status open">${esc(String(r.endsAt).slice(0,10))} 마감</span>`;return '<span class="status open">모집 중</span>'}
 function benefit(r){return esc((r.benefitSummary||r.support||r.summary||'지원 내용을 확인해보세요.').slice(0,220))}
-function list(){const sm=saved(),active=String(st.category).split(',');return `<div class="connect-title-row"><div><div class="eyebrow">04 — Support Browser</div><h2 class="mid">나에게 맞는 지원 찾기</h2></div><button class="btn quiet" data-edit>조건 수정</button></div><div class="category-tabs">${C.map(([v,l])=>`<button aria-selected="${v==='all'?st.category==='all':active.includes(v)}" data-cat="${v}">${l}</button>`).join('')}</div><div class="resource-tools"><input id="rs" type="search" placeholder="정책·기관·프로그램 검색" value="${esc(st.query)}"><button class="btn quiet" data-search>검색</button><span>${st.items.length}개</span></div>${st.loading?'<div class="connect-loading">불러오는 중…</div>':''}${st.error?`<div class="connect-error">${esc(st.error)} <button data-reload>다시 시도</button></div>`:''}<div class="resource-list">${st.items.map(r=>`<article class="policy-card ${r.priority==='top'?'policy-card-top-choice':r.priority==='high'?'policy-card-priority':''}">${r.priority==='top'?'<div class="recommendation-ribbon">가장 먼저 추천</div>':r.priority==='high'?'<div class="recommendation-ribbon secondary">우선 추천</div>':''}<div class="policy-card-top"><span class="tag">${esc(CN[r.category]||'청년지원')}</span>${stat(r)}</div><h3>${esc(r.title)}</h3><p>${benefit(r)}</p><div class="policy-meta"><span>${esc(r.organization||'운영기관')}</span></div>${r.periodText?`<div class="policy-period">모집기간 · ${esc(r.periodText)}</div>`:''}<div class="policy-actions"><button class="btn quiet" data-detail="${r.id}">신청 준비하기</button><button class="save-policy" data-save="${r.id}">${sm[r.id]?'저장됨 ✓':'저장'}</button>${url(r.applicationUrl)?`<a class="btn" href="${esc(url(r.applicationUrl))}" target="_blank" rel="noopener noreferrer">바로가기</a>`:r.contact?`<a class="btn" href="tel:${esc(String(r.contact).replace(/[^0-9+]/g,''))}">전화 문의</a>`:''}</div></article>`).join('')||(!st.loading?'<div class="empty-resources">현재 조건에 맞고 바로 이용할 수 있는 지원을 찾지 못했어요.</div>':'')}</div><section class="official-sources"><h3>공식 출처</h3><div>${SOURCES.map(([n,d,u])=>`<a href="${u}" target="_blank" rel="noopener noreferrer"><b>${n}</b><span>${d}</span></a>`).join('')}</div></section>`}
+function recommendationReason(r){
+  const reason=String(r.recommendationReason||'').trim();
+  if(reason)return reason;
+  const category=CN[r.category]||'선택한 지원 분야';
+  return `${category} 필요와 지역·연령·신청 조건, 모집 상태를 함께 비교해 보여드려요.`;
+}
+function firstActions(r){
+  const barrier=String(st.profile?.journeyBarrier||st.profile?.barrier||'');
+  const first=url(r.applicationUrl)?'공식 안내 페이지 열기':'지원 내용 한 번 읽어보기';
+  const second=barrier==='overload'?'신청 조건에서 확인할 내용 하나 표시하기':
+    barrier==='going'?'방문 위치나 운영시간 확인하기':
+    barrier==='energy'||barrier==='late'?'지금 궁금한 점 하나만 고르기':'담당자에게 물어볼 내용 하나 고르기';
+  return [first,second,`${r.organization||'운영기관'} 담당자에게 문의할 문장 연습하기`];
+}
+function rehearsalResource(r){
+  const p=r.presentation||{};
+  return {
+    id:r.id,title:r.title,organization:r.organization||'운영기관',category:r.category,
+    applicationUrl:r.applicationUrl||'',applicationMethod:r.applicationMethod||'기관 문의 후 안내',
+    requiredDocuments:r.requiredDocuments||(Array.isArray(p.documents)?p.documents.slice(0,3).join(', '):'담당자에게 확인'),
+    periodText:r.periodText||'모집 일정을 담당자에게 확인',contact:r.contact||'',
+    recommendationReason:recommendationReason(r),firstActions:firstActions(r),
+    keyFacts:[...(Array.isArray(p.benefits)?p.benefits.slice(0,2):[]),...(Array.isArray(p.eligibility)?p.eligibility.slice(0,2):[])]
+  };
+}
+function list(){
+  const sm=saved(),active=String(st.category).split(',');
+  return `<div class="connect-title-row"><div><div class="eyebrow">04 — Support Browser</div><h2 class="mid">나에게 맞는 지원 찾기</h2></div><button class="btn quiet" data-edit>조건 수정</button></div><div class="category-tabs">${C.map(([v,l])=>`<button aria-selected="${v==='all'?st.category==='all':active.includes(v)}" data-cat="${v}">${l}</button>`).join('')}</div><div class="resource-tools"><input id="rs" type="search" placeholder="정책·기관·프로그램 검색" value="${esc(st.query)}"><button class="btn quiet" data-search>검색</button><span>${st.items.length}개</span></div>${st.loading?'<div class="connect-loading">불러오는 중…</div>':''}${st.error?`<div class="connect-error">${esc(st.error)} <button data-reload>다시 시도</button></div>`:''}<div class="resource-list">${st.items.map(r=>`<article class="policy-card ${r.priority==='top'?'policy-card-top-choice':r.priority==='high'?'policy-card-priority':''}">${r.priority==='top'?'<div class="recommendation-ribbon">가장 먼저 추천</div>':r.priority==='high'?'<div class="recommendation-ribbon secondary">우선 추천</div>':''}<div class="policy-card-top"><span class="tag">${esc(CN[r.category]||'청년지원')}</span>${stat(r)}</div><h3>${esc(r.title)}</h3><p>${benefit(r)}</p><div class="policy-meta"><span>${esc(r.organization||'운영기관')}</span></div>${r.periodText?`<div class="policy-period">모집기간 · ${esc(r.periodText)}</div>`:''}<div class="policy-recommendation-reason"><b>추천 이유</b><span>${esc(recommendationReason(r))}</span></div><div class="policy-first-action"><b>지금 가능한 첫 행동</b><span>${esc(firstActions(r)[0])}</span></div><div class="policy-actions"><button class="btn quiet" data-detail="${r.id}">신청 준비하기</button><button class="btn quiet" data-card-rehearse="${r.id}">이 기관 문의 연습</button><button class="save-policy" data-save="${r.id}">${sm[r.id]?'저장됨 ✓':'저장'}</button>${url(r.applicationUrl)?`<a class="btn" href="${esc(url(r.applicationUrl))}" target="_blank" rel="noopener noreferrer">바로가기</a>`:r.contact?`<a class="btn" href="tel:${esc(String(r.contact).replace(/[^0-9+]/g,''))}">전화 문의</a>`:''}</div></article>`).join('')||(!st.loading?'<div class="empty-resources">현재 조건에 맞고 바로 이용할 수 있는 지원을 찾지 못했어요.</div>':'')}</div><section class="official-sources"><h3>공식 출처</h3><div>${SOURCES.map(([n,d,u])=>`<a href="${u}" target="_blank" rel="noopener noreferrer"><b>${n}</b><span>${d}</span></a>`).join('')}</div></section>`;
+}
 function detail(){const r=st.detail;if(!r)return list();const sv=saved()[r.id]||{stage:'preparing',checklist:{}};const checks=['공고 내용 확인',...(r.requiredDocuments?['제출서류 준비']:[]),'신청서 작성','신청 완료'];return `<div class="policy-detail"><button class="back-step" data-back>← 목록으로</button><div class="eyebrow">${esc(CN[r.category]||'청년지원')}</div><h2 class="mid">${esc(r.title)}</h2><div class="detail-badges">${stat(r)}</div><div class="card"><h3>지원 내용</h3><p>${benefit(r)}</p>${r.support?`<p>${esc(r.support)}</p>`:''}<p class="source-line">${esc(r.organization||'운영기관')}</p></div>${r.qualification?`<div class="card"><h3>신청 조건</h3><div class="qualification">${esc(r.qualification)}</div></div>`:''}<div class="card"><h3>준비할 것</h3><div class="application-checklist">${checks.map((x,i)=>`<label><input type="checkbox" data-check="${i}" ${sv.checklist?.[i]?'checked':''}><span>${esc(x)}</span></label>`).join('')}</div>${r.requiredDocuments?`<p class="documents">제출서류 · ${esc(r.requiredDocuments)}</p>`:''}</div><div class="card"><h3>지원 현황</h3><select data-stage>${[['preparing','준비 중'],['waiting','결과 기다리는 중'],['completed','완료']].map(([v,l])=>`<option value="${v}" ${sv.stage===v?'selected':''}>${l}</option>`).join('')}</select></div><div class="row">${url(r.applicationUrl)?`<a class="btn" href="${esc(url(r.applicationUrl))}" target="_blank" rel="noopener noreferrer">공식 페이지에서 신청</a>`:''}<button class="btn quiet" data-rehearse>문의·면접 연습</button></div></div>`}
 function regionOptions(selected){const groups=[['수도권',['서울','경기','인천']],['광역시·특별자치시',['부산','대구','광주','대전','울산','세종']],['도·특별자치도',['강원','충북','충남','전북','전남','경북','경남','제주']]];return groups.map(([label,values])=>`<optgroup label="${label}">${values.map(v=>`<option value="${v}" ${selected===v?'selected':''}>${v}</option>`).join('')}</optgroup>`).join('')}
 const originalOptions=options;
@@ -26,20 +54,39 @@ function structuredDetail(){const r=st.detail;if(!r)return list();const sv=saved
 detail=structuredDetail;
 const renderStructuredDetail=structuredDetail;
 detail=function(){const html=renderStructuredDetail(),ready=Number(st.detail?.presentation?.version)>=1;if(ready)return html;const state=st.detailLoading?'<div class="detail-ai-pending"><span class="detail-spinner" aria-hidden="true"></span><b>필요한 내용만 정리하고 있어요</b><small>잠시만 기다려 주세요.</small></div>':st.detailError?`<div class="detail-ai-error"><b>${esc(st.detailError)}</b><button class="btn quiet" data-detail-retry>다시 시도</button></div>`:'<div class="detail-ai-pending"><span class="detail-spinner" aria-hidden="true"></span><b>필요한 내용만 정리하고 있어요</b></div>';return html.replace(/<div class="detail-ai-pending">[\s\S]*?<\/div>/,state)};
+const renderDetailWithPresentation=detail;
+detail=function(){
+  const html=renderDetailWithPresentation();
+  const r=st.detail;
+  if(!r)return html;
+  const steps=firstActions(r);
+  const path=`<section class="personalized-connection-path"><span>이 지원에 닿는 첫 행동</span><p>${esc(recommendationReason(r))}</p><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join('')}</ol><button class="btn" data-rehearse>${esc(r.organization||'이 기관')} 문의 연습 시작하기</button><small>연습을 시작해도 실제 전화나 신청이 자동으로 진행되지는 않아요.</small></section>`;
+  return html.replace('<div class="card detail-progress">',`${path}<div class="card detail-progress">`)
+    .replace('<button class="btn quiet" data-rehearse>문의·면접 연습</button>','');
+};
 async function ensurePresentation(){const resource=st.detail;if(!resource||Number(resource.presentation?.version)>=1||st.detailLoading)return;st.detailLoading=true;st.detailError='';render();try{const response=await fetch('/api/resource-presentation',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:resource.id})});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'AI 정리에 실패했어요');resource.presentation=data.presentation;const item=st.items.find(value=>value.id===resource.id);if(item)item.presentation=data.presentation}catch(error){st.detailError=error.message||'정책 상세 내용을 정리하지 못했어요'}finally{st.detailLoading=false;render()}}
 function toggleResource(r){const all=saved();if(all[r.id])delete all[r.id];else all[r.id]={stage:'preparing',checklist:{},savedAt:new Date().toISOString(),stageHistory:[],resource:snapshot(r)};write(SKEY,all)}
 function bindCorrections(){
   document.querySelectorAll('[data-detail]').forEach(button=>button.onclick=()=>{st.detail=st.items.find(resource=>resource.id===button.dataset.detail);st.detailError='';st.view='detail';render()});
   document.querySelector('[data-detail-retry]')?.addEventListener('click',()=>{st.detailError='';ensurePresentation()});
   document.querySelectorAll('[data-save]').forEach(button=>button.onclick=()=>{const resource=st.items.find(item=>item.id===button.dataset.save);if(resource){toggleResource(resource);render()}});
+  document.querySelectorAll('[data-card-rehearse]').forEach(button=>button.onclick=()=>{
+    const resource=st.items.find(item=>item.id===button.dataset.cardRehearse);
+    if(resource)startRehearsal(resource);
+  });
   const form=document.getElementById('cp');
   if(form)form.onsubmit=event=>{event.preventDefault();const data=new FormData(form);st.profile={...st.profile,birthYear:data.get('birthYear')||'',age:'',ageMin:null,ageMax:null,region:data.get('region')||'',education:data.get('education'),employment:data.get('employment'),housing:data.get('housing'),householdSize:data.get('householdSize'),income:data.get('income')||'unknown',jobs:data.getAll('jobs'),needs:data.getAll('needs'),specialQualifications:data.getAll('specialQualifications'),consent:true};write(PKEY,st.profile);st.category=st.profile.needs.length?st.profile.needs.join(','):'all';st.view='list';load()};
   if(st.view==='detail'&&st.detail&&!st.detailLoading&&!st.detailError&&Number(st.detail.presentation?.version)<1)queueMicrotask(ensurePresentation);
 }
 function render(){const root=document.getElementById('connectApp');if(!root)return;root.innerHTML=st.view==='profile'?profile():st.view==='detail'?detail():list();bind();bindCorrections()}
 async function load(){st.loading=true;st.error='';render();const signals=(st.profile?.assessmentSignals||[]).join('|').slice(0,1800);const p=new URLSearchParams({category:st.category,q:st.query,age:String(age()),ageMin:String(st.profile?.ageMin??''),ageMax:String(st.profile?.ageMax??''),region:st.profile?.region||'',education:st.profile?.education||'',employment:st.profile?.employment||'',income:st.profile?.income||'',housing:st.profile?.housing||'',needs:(st.profile?.needs||[]).join(','),jobs:(st.profile?.jobs||[]).join(','),specialQualifications:(st.profile?.specialQualifications||[]).join('|'),situation:(st.profile?.helpRequest||'').slice(0,500),journeyLevel:String(st.profile?.journeyLevel||''),journeyBarrier:st.profile?.journeyBarrier||'',journeyVision:st.profile?.journeyVision||'',actionSize:st.profile?.actionSize||'',signals,limit:'200'});try{const r=await fetch(`/api/resources?${p}`);if(!r.ok)throw 0;st.items=(await r.json()).resources||[];if(st.focusResourceId){const context=read(RKEY,null),savedResource=saved()[st.focusResourceId]?.resource;st.detail=st.items.find(item=>item.id===st.focusResourceId)||savedResource||(context?.resourceId===st.focusResourceId?context.resource:null);if(st.detail)st.view='detail';localStorage.removeItem(FKEY);st.focusResourceId=''}}catch{st.error='지원을 불러오지 못했어요.'}finally{st.loading=false;render()}}
-function snapshot(r){return {id:r.id,title:r.title,organization:r.organization||'',category:r.category,endsAt:r.endsAt||'',periodText:r.periodText||'',applicationUrl:r.applicationUrl||''}}
+function snapshot(r){return {id:r.id,title:r.title,organization:r.organization||'',category:r.category,endsAt:r.endsAt||'',periodText:r.periodText||'',applicationUrl:r.applicationUrl||'',applicationMethod:r.applicationMethod||'',requiredDocuments:r.requiredDocuments||'',recommendationReason:recommendationReason(r),firstActions:firstActions(r)}}
 function saveResource(r,patch={}){const a=saved(),previous=a[r.id],now=new Date().toISOString();const next={stage:'preparing',checklist:{},savedAt:now,stageHistory:[],...(previous||{}),...patch,resource:snapshot(r)};if(patch.stage&&patch.stage!==previous?.stage)next.stageHistory=[...(previous?.stageHistory||[]),{stage:patch.stage,changedAt:now}];a[r.id]=next;write(SKEY,a);return next}
+function startRehearsal(resource){
+  saveResource(resource);
+  write(RKEY,{resourceId:resource.id,resource:rehearsalResource(resource),returnTo:'/home.html?screen=connect'});
+  window.location.href=`/rehearsal?resource=${encodeURIComponent(resource.id)}`;
+}
 function bind(){
   const f=document.getElementById('cp');
   if(f)f.onsubmit=e=>{e.preventDefault();const d=new FormData(f);st.profile={...st.profile,birthYear:d.get('birthYear')||st.profile?.birthYear||'',age:st.profile?.age||'',region:d.get('region')||st.profile?.region||'',education:d.get('education'),employment:d.get('employment'),housing:d.get('housing'),householdSize:d.get('householdSize'),income:d.get('income')||'unknown',jobs:d.getAll('jobs'),needs:d.getAll('needs'),specialQualifications:d.getAll('specialQualifications'),consent:true};write(PKEY,st.profile);st.category=st.profile.needs.length?st.profile.needs.join(','):'all';st.view='list';load()};
@@ -54,9 +101,7 @@ function bind(){
   document.querySelectorAll('[data-check]').forEach(c=>c.onchange=()=>{const current=saved()[st.detail.id]||{stage:'preparing',checklist:{}};current.checklist[c.dataset.check]=c.checked;saveResource(st.detail,current)});
   document.querySelector('[data-stage]')?.addEventListener('change',e=>saveResource(st.detail,{stage:e.target.value}));
   document.querySelector('[data-rehearse]')?.addEventListener('click',()=>{
-    saveResource(st.detail);
-    write(RKEY,{resourceId:st.detail.id,resource:st.detail,returnTo:'/home.html?screen=connect'});
-    window.location.href=`/rehearsal?resource=${encodeURIComponent(st.detail.id)}`;
+    startRehearsal(st.detail);
   });
 }
 window.NudgeonConnect={mount(){st.profile=mergedProfile();st.focusResourceId=read(FKEY,'');st.view=read(PKEY,null)?'list':'profile';render();if(st.view==='list')load()}};
