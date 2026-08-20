@@ -39,6 +39,8 @@ export function personalizationSummary(snapshot: JourneySnapshot): string {
 
 export function recommendScenarioId(snapshot: JourneySnapshot): string {
   const text = snapshot.microstepText;
+  if (/카페|메뉴|음료|주문|키오스크/.test(text)) return 'cafe';
+  if (/도서관|책 위치|청구기호/.test(text)) return 'library';
   if (/교수|메일|학교|수업|과제/.test(text)) return 'prof';
   if (/친구|답장|메시지|연락/.test(text)) return 'friend';
   if (/상담|마음|도움 요청/.test(text)) return 'center';
