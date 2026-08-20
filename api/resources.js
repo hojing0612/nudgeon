@@ -300,7 +300,7 @@ async function personalizedOrder(candidates, profile, requestedLimit) {
   try {
     const result = await callClaudeTool({
       name: 'rank_recommendations',
-      description: `후보는 코드에서 명백한 지역·연령·마감·특수자격 불일치와 중복을 이미 제거했다. 자가진단의 현재 필요, 사용자가 직접 적은 필요한 도움(situation), 관심 직종, 감당 가능한 행동 크기를 기준으로 순서를 정한다. 주관식 상황이 있으면 단어 일치만 보지 말고 사용자가 실제로 해결하고 싶은 문제를 해석해 우선순위에 반영한다. 정보가 불확실하다는 이유만으로 삭제하지 말고 관련도가 낮으면 standard로 뒤에 둔다. 실질 혜택과 신청 경로가 구체적인 자료를 우선하고 비슷한 종류만 상위에 반복하지 않는다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정한다. 가능하면 ${targetCount}개를 반환하되 명백히 카테고리가 틀리거나 실제 혜택이 없는 후보만 생략한다. reason은 내부 검증용 한 문장으로 작성한다.`,
+      description: `후보는 코드에서 명백한 지역·연령·마감·특수자격 불일치와 중복을 이미 제거했다. 자가진단의 현재 필요, 사용자가 직접 적은 필요한 도움(situation), 관심 직종, 감당 가능한 행동 크기를 기준으로 순서를 정한다. 주관식 상황이 있으면 단어 일치만 보지 말고 사용자가 실제로 해결하고 싶은 문제를 해석해 우선순위에 반영한다. 정보가 불확실하다는 이유만으로 삭제하지 말고 관련도가 낮으면 standard로 뒤에 둔다. 실질 혜택과 신청 경로가 구체적인 자료를 우선하고 비슷한 종류만 상위에 반복하지 않는다. 가장 적합한 하나만 top, 다음 최대 두 개만 high로 정한다. 가능하면 ${targetCount}개를 반환하되 명백히 카테고리가 틀리거나 실제 혜택이 없는 후보만 생략한다. reason은 사용자에게 보여줄 존댓말 한 문장으로 작성한다. 사용자의 지역·연령·필요 영역·관심 직종과 정책의 실질 혜택 중 실제 근거만 설명하고, 연락 부담이나 행동 난이도 때문에 기관 자체를 선택했다고 표현하지 않는다. 진단명이나 낙인 표현을 쓰지 않는다.`,
       schema: rankingSchema,
       input: {
         profile,
@@ -420,7 +420,8 @@ export default async function handler(req, res) {
       alwaysOpen: period.status === 'always', startsAt: period.startsAt, endsAt: period.endsAt,
       periodText: period.label || resource.raw_data?.applicationPeriod || '',
       qualification: resource.details || '', eligibility: result,
-      source: resource.source_key, priority:resource._priority||'standard'
+      source: resource.source_key, priority:resource._priority||'standard',
+      recommendationReason:String(resource._reason||'').trim().slice(0,220)
     };
   });
   return res.status(200).json({
