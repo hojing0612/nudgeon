@@ -933,8 +933,7 @@ function vReport(){
     <button class="btn" data-go="micro" ${state.reportLoading?'disabled':''}>오늘 할 수 있는 것 보기</button>
     <button class="btn quiet" data-restart="1">다시 답하기</button>
   </div>
-  <p class="note">넛지온은 사용자를 '고립 청년'으로 분류하지 않아요.
-  분류가 아니라 <b>어디서 멈췄는지</b>만 봅니다. 그래서 낙인감이 생기지 않고, 시작점이 훨씬 낮아져요.</p>`;
+`;
 }
 
 /* ── 02 마이크로스텝 ── */
@@ -963,9 +962,7 @@ function vMicro(){
     <button class="btn" data-go="rehearsal">사람과 만나는 상황 연습해보기</button>
     <button class="btn quiet" data-regen="1">다른 걸로 바꿔주세요</button>
   </div>
-  <p class="note">여기에 <b>연속 달성 스트릭을 일부러 넣지 않았어요.</b> 스트릭이 끊기는 순간
-  "역시 나는 못 해"가 되기 쉬운데, 고립 상태에서는 그 실패 신호 하나가 앱을 완전히 떠나게 만들거든요.
-  대신 난이도를 올리거나 내리며 실패가 아니라 <b>조정한 기록</b>으로 남겨요.</p>`;
+`;
 }
 
 function vCompletion(){
@@ -1190,9 +1187,7 @@ function vRehearsal(){
     <div class="opts">
       ${SCENARIOS.map(s=>`<button class="opt" data-scenario="${s.id}">${s.title}</button>`).join('')}
     </div>
-    <p class="note">제안서의 실시간 표정·시선 분석은 이 프로토타입에서 <b>일부러 빼두었어요.</b>
-    카메라를 켜라는 요구 자체가 고립 상태에서는 가장 큰 이탈 지점이고, 텍스트만으로도 핵심 가치는 검증돼요.
-    영상 분석은 검증 이후에 붙이는 게 맞습니다.</p>`;
+`;
   }
   const sc = SCENARIOS.find(s=>s.id===state.scenario);
   return `
@@ -1732,8 +1727,7 @@ function vBridge(){
       남은 문항은 <b>${left}개</b>예요. 답하기 어려운 건 건너뛰어도 괜찮아요.</p>
   </div>
   <div class="row"><button class="btn" data-resume="1">계속하기</button></div>
-  <p class="note">넛지온은 사용자를 어떤 유형으로 분류하지 않아요.
-  지금 <b>어디서 멈췄는지</b>만 보고, 그에 맞는 크기의 행동을 찾습니다.</p>`;
+`;
 }
 
 async function finishCheck(){
