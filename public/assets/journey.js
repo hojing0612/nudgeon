@@ -109,32 +109,16 @@ let DEMO_STEP_PRESETS = {
   late:[['stretch',2],['walk',2],['cafe',1]]
 };
 
-let SUPPORT_DATA = {
-  route:{
-    title:'조용한 산책 코스', desc:'시연에서는 현재 위치 대신 예시 동네 데이터를 사용해요.',
-    choices:[['가장 짧은 코스','약 8분 · 550m'],['사람 적은 코스','약 12분 · 골목 위주'],['벤치 있는 코스','약 15분 · 공원 경유']]
-  },
-  cafe:{
-    title:'동네 카페 인기 메뉴', desc:'현장에서 오래 고민하지 않도록 메뉴를 미리 골라둬요.',
-    choices:[['아이스 아메리카노','4,000원 · 가장 많이 주문'],['카페라테','4,500원 · 부드러운 맛'],['유자차','4,800원 · 카페인 없음']]
-  },
-  video:{
-    title:'3분 방 안 스트레칭', desc:'첫 동작만 따라 하고 멈춰도 완료로 인정해요.', choices:[]
-  }
-};
-
-
 /* ═══════════════════════════════════════════════════════════
    Google Sheets 콘텐츠 로더
-   - CODE_questions / CODE_microsteps / CODE_presets / CODE_support를 읽는다.
+   - CODE_questions / CODE_microsteps / CODE_presets를 읽는다.
    - config.js의 GOOGLE_SHEET_ID가 비어 있거나 로딩이 실패하면 위 기본 데이터를 쓴다.
    ═══════════════════════════════════════════════════════════ */
 const FALLBACK_CONTENT = {
   questions: JSON.parse(JSON.stringify(QUESTIONS)),
   chains: JSON.parse(JSON.stringify(MICROSTEP_CHAINS)),
   pool: [],
-  presets: JSON.parse(JSON.stringify(DEMO_STEP_PRESETS)),
-  support: JSON.parse(JSON.stringify(SUPPORT_DATA))
+  presets: JSON.parse(JSON.stringify(DEMO_STEP_PRESETS))
 };
 
 function isActive(value){
@@ -156,8 +140,7 @@ async function loadCsvSheet(sheetName){
     'survey','domain','question_id','question_order','question_text','option_order','option_text',
     'option_value','score','flag','required','active','show_if','note','step_id','chain_id',
     'chain_label','difficulty','title','why_text','feature_type','support_label','barrier_id',
-    'barrier_label','recommendation_order','start_difficulty','feature_title',
-    'feature_description','choice_order','choice_title','choice_detail','level','barrier_tags','goal_tags',
+    'barrier_label','recommendation_order','start_difficulty','level','barrier_tags','goal_tags',
     'help_type','help_title','help_description','help_steps','primary_action','resource_url',
     'search_keyword','rehearsal_scenario','fallback_action','completion_message'
   ];
@@ -418,48 +401,21 @@ function buildPresets(rows, chains){
   return result;
 }
 
-function buildSupport(rows){
-  const groups=new Map();
-  rows.filter(r=>isActive(r.active)).forEach(r=>{
-    const type=String(r.feature_type ?? '').trim();
-    if(!type) return;
-    if(!groups.has(type)) groups.set(type, {
-      title:String(r.feature_title ?? '').trim(),
-      desc:String(r.feature_description ?? '').trim(),
-      choices:[]
-    });
-    const choiceTitle=String(r.choice_title ?? '').trim();
-    if(choiceTitle) groups.get(type).choices.push({
-      order:Number(r.choice_order)||999,
-      title:choiceTitle,
-      detail:String(r.choice_detail ?? '').trim()
-    });
-  });
-  const result={};
-  groups.forEach((g,type)=>{
-    result[type]={title:g.title, desc:g.desc,
-      choices:g.choices.sort((a,b)=>a.order-b.order).map(c=>[c.title,c.detail])};
-  });
-  return result;
-}
-
 async function loadContentFromGoogleSheets(){
   const id = window.NUDGEON_CONFIG?.GOOGLE_SHEET_ID?.trim();
   if(!id){
     console.info('Google Sheet ID가 없어 내장 fallback 데이터를 사용합니다.');
     return false;
   }
-  const [qRows,mRows,pRows,sRows] = await Promise.all([
+  const [qRows,mRows,pRows] = await Promise.all([
     loadCsvSheet('CODE_questions'),
     loadCsvSheet('CODE_microsteps'),
-    loadCsvSheet('CODE_presets'),
-    loadCsvSheet('CODE_support')
+    loadCsvSheet('CODE_presets')
   ]);
   const questions=buildQuestions(qRows);
   const microstepData=buildMicrostepData(mRows);
   const chains=microstepData.chains;
   const presets=buildPresets(pRows,chains);
-  const support=buildSupport(sRows);
   if(!questions.length || !Object.keys(chains).length) throw new Error('필수 CODE 시트 데이터가 비어 있습니다.');
   ALL_QUESTIONS=questions;
   QUESTIONS=questionsOf(STAGE1);
@@ -468,7 +424,6 @@ async function loadContentFromGoogleSheets(){
   MICROSTEP_POOL=microstepData.pool;
   MICROSTEP_DATA_SOURCE=MICROSTEP_POOL.length?'sheet':'fallback';
   DEMO_STEP_PRESETS=Object.keys(presets).length ? presets : FALLBACK_CONTENT.presets;
-  SUPPORT_DATA=Object.keys(support).length ? support : FALLBACK_CONTENT.support;
   console.info('NudgeOn 콘텐츠를 Google Sheets에서 불러왔습니다.');
   return true;
 }
@@ -484,7 +439,6 @@ async function initializeApp(){
     MICROSTEP_POOL=FALLBACK_CONTENT.pool;
     MICROSTEP_DATA_SOURCE='fallback';
     DEMO_STEP_PRESETS=FALLBACK_CONTENT.presets;
-    SUPPORT_DATA=FALLBACK_CONTENT.support;
   }
   const restored = restoreProgress();
   if(restored && state.micro.length)state.micro=hydrateMicrostepHelp(state.micro);
@@ -951,7 +905,7 @@ function vMicro(){
              ${s.why?`<div class="step-why">${s.why}</div>`:''}
              ${s.chainId?`<span class="level-chip">${MICROSTEP_CHAINS[s.chainId].label} · 난이도 ${s.difficulty+1}/${MICROSTEP_CHAINS[s.chainId].chain.length}</span>`:''}</div>
         <div class="step-actions">
-          ${s.help||SUPPORT_DATA[s.feature]?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
+          ${s.help?`<button class="tiny feature" data-support="${i}">${s.supportOpen?'도움 닫기':'도움 보기'}</button>`:''}
           <button class="tiny" data-smaller="${i}" ${s.chainId && s.difficulty===0?'disabled':''}>더 작게</button>
           <button class="tiny" data-larger="${i}" ${!s.chainId || s.difficulty>=MICROSTEP_CHAINS[s.chainId].chain.length-1?'disabled':''}>한 단계 높이기</button>
         </div>
@@ -997,25 +951,7 @@ function vCompletion(){
 
 
 function renderSupport(s,i){
-  if(s.help)return renderMicrostepHelp(s,i);
-  const data = SUPPORT_DATA[s.feature];
-  if(!data) return '';
-  if(s.feature==='video'){
-    return `<div class="support-panel">
-      <div class="support-head"><div><div class="support-title">${data.title}</div><p class="support-desc">${data.desc}</p></div>
-      <button class="tiny" data-support="${i}">닫기</button></div>
-      <div class="video-box"><div><button class="play" data-play="${i}" aria-label="스트레칭 재생">▶</button>
-      <div class="play-note">어깨 돌리기 → 목 옆 늘리기 → 기지개</div></div></div>
-    </div>`;
-  }
-  return `<div class="support-panel">
-    <div class="support-head"><div><div class="support-title">${data.title}</div><p class="support-desc">${data.desc}</p></div>
-    <button class="tiny" data-support="${i}">닫기</button></div>
-    <div class="support-grid">${data.choices.map((c,j)=>`<button class="support-choice" data-choice="${i}:${j}" aria-pressed="${s.selectedSupport===j}">
-      <b>${c[0]}</b><span>${c[1]}</span></button>`).join('')}</div>
-    ${s.feature==='route'?`<div class="route-line"><i></i></div><div class="support-meta"><span>출발 · 집 앞</span><span>혼잡도 · 낮음</span><span>경사 · 거의 없음</span></div>`:''}
-    ${s.feature==='cafe'?`<div class="draft">주문 연습 · “${data.choices[s.selectedSupport||0][0]} 한 잔 주세요.”</div>`:''}
-  </div>`;
+  return s.help ? renderMicrostepHelp(s,i) : '';
 }
 
 function helpDurationSeconds(help){
@@ -1595,14 +1531,6 @@ function bind(){
   stage.querySelectorAll('[data-larger]').forEach(b=>b.onclick=()=>makeLarger(+b.dataset.larger));
   stage.querySelectorAll('[data-support]').forEach(b=>b.onclick=()=>{
     const i=+b.dataset.support; state.micro[i].supportOpen=!state.micro[i].supportOpen; render();
-  });
-  stage.querySelectorAll('[data-choice]').forEach(b=>b.onclick=()=>{
-    const [i,j]=b.dataset.choice.split(':').map(Number); state.micro[i].selectedSupport=j; render();
-  });
-  stage.querySelectorAll('[data-play]').forEach(b=>b.onclick=()=>{
-    const i=+b.dataset.play; b.textContent='✓';
-    state.micro[i].why='첫 동작까지 확인했어요. 여기서 멈춰도 완료예요.';
-    setTimeout(render,450);
   });
   stage.querySelectorAll('[data-help-check]').forEach(b=>b.onclick=()=>{
     const [i]=b.dataset.helpCheck.split(':').map(Number);
