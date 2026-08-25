@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NudgeOn 발표용 기록·성장 데모</title>
+</head>
+<body>
+<script>
+(function(){
+  const pad=n=>String(n).padStart(2,'0');
+  const dateKey=(offset=0)=>{
+    const d=new Date();
+    d.setHours(12,0,0,0);
+    d.setDate(d.getDate()+offset);
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  };
+  const at=(offset,hour=10)=>`${dateKey(offset)}T${pad(hour)}:00:00`;
+  const today=dateKey(0);
+  const d1=dateKey(-1), d2=dateKey(-2), d3=dateKey(-3), d4=dateKey(-4), d5=dateKey(-5), d6=dateKey(-6), d7=dateKey(-7), d8=dateKey(-8), d9=dateKey(-9);
+
+  const journey={
+    version:1,
+    savedAt:new Date().toISOString(),
+    screen:'record',
+    qi:0,
+    answers:{barrier:'going',vision:'social',nudgeon_help_open:'밖에 나가고 사람과 말하는 게 부담스러워요.'},
+    profile:{level:3,levelName:'제한적 외출',barrier:'going',barrierLabel:'외출 부담',vision:'social',helpRequest:'밖에 나가고 사람과 말하는 게 부담스러워요.'},
+    report:null,
+    group:'isolation',
+    micro:[],
+    selectedMicroIndex:null,
+    draft:'',
+    nextAction:null,
+    recommendationHistory:[],
+    visited:['check','micro','rehearsal','connect','record']
+  };
+
+  const habits=[
+    {id:'demo-habit-sun',name:'아침에 커튼 열고 햇빛 5분 보기',createdAt:at(-10),completedDates:[d9,d8,d7,d6,d5,d4,d3,d2,d1,today]},
+    {id:'demo-habit-walk',name:'집 근처 10분 산책하기',createdAt:at(-9),completedDates:[d8,d7,d5,d4,d2,d1,today]},
+    {id:'demo-habit-stretch',name:'하루 3분 스트레칭 하기',createdAt:at(-8),completedDates:[d7,d6,d4,d3,d2,today]}
+  ];
+
+  const notes={};
+  notes[d7]='창문을 열어두는 시간이 조금 길어졌다. 처음보다 덜 부담스럽다.';
+  notes[d5]='산책은 10분까지는 못 했지만 집 앞을 한 바퀴 돌았다.';
+  notes[d3]='카페 앞까지 갔다가 들어오지는 않았다. 그래도 다음에는 들어가볼 수 있을 것 같다.';
+  notes[d1]='주문 문장을 미리 연습하고 나니 생각보다 긴장이 덜했다.';
+  notes[today]='오늘은 산책도 하고 카페에서 주문까지 해봤다. 작은 행동들이 이어지니까 전보다 시작이 쉬워졌다.';
+
+  const photo='/assets/demo-record-photo.svg';
+  const completions=[
+    {id:'demo-c1',stepId:'walk_8',title:'건물 밖 1분 서 있기',completedAt:at(-7,11)},
+    {id:'demo-c2',stepId:'walk_9',title:'집 앞 100m 걷기',completedAt:at(-5,15)},
+    {id:'demo-c3',stepId:'cafe_2',title:'카페 앞까지 가기',completedAt:at(-3,16),photoDataUrl:photo},
+    {id:'demo-c4',stepId:'cafe_5',title:'직원에게 메뉴 이름만 말하기',completedAt:at(-1,14)},
+    {id:'demo-c5',stepId:'walk_11',title:'사람 적은 산책 코스 걷기',completedAt:at(0,9),photoDataUrl:photo},
+    {id:'demo-c6',stepId:'stretch_4',title:'3분 스트레칭 따라 하기',completedAt:at(0,18)}
+  ];
+
+  const rehearsals=[
+    {id:'demo-r1',scenarioTitle:'카페에서 주문하기',completedTurns:4,savedAt:at(-1,13)},
+    {id:'demo-r2',scenarioTitle:'기관에 프로그램 문의하기',completedTurns:5,savedAt:at(0,17)}
+  ];
+
+  const savedResources={
+    'demo-resource-1':{
+      id:'demo-resource-1',
+      stage:'preparing',
+      savedAt:at(-2,12),
+      resource:{id:'demo-resource-1',title:'청년도전지원사업',organization:'고용노동부',endsAt:''},
+      stageHistory:[{stage:'preparing',changedAt:at(-2,12)}]
+    },
+    'demo-resource-2':{
+      id:'demo-resource-2',
+      stage:'waiting',
+      savedAt:at(-1,12),
+      resource:{id:'demo-resource-2',title:'청년 마음건강 지원사업',organization:'지역 청년지원기관',endsAt:''},
+      stageHistory:[{stage:'preparing',changedAt:at(-1,12)},{stage:'waiting',changedAt:at(0,11)}]
+    }
+  };
+
+  localStorage.setItem('nudgeon.journey.v1',JSON.stringify(journey));
+  localStorage.setItem('nudgeon.habits.v1',JSON.stringify(habits));
+  localStorage.setItem('nudgeon.record-notes.v1',JSON.stringify(notes));
+  localStorage.setItem('nudgeon.microstep-history.v1',JSON.stringify(completions));
+  localStorage.setItem('nudgeon.rehearsal-history.v1',JSON.stringify(rehearsals));
+  localStorage.setItem('nudgeon.saved-resources.v1',JSON.stringify(savedResources));
+  localStorage.setItem('nudgeon.presentation-record-demo.v1',JSON.stringify({active:true,startedAt:new Date().toISOString()}));
+
+  location.replace('/home.html?screen=record&demo=record-presentation');
+})();
+</script>
+</body>
+</html>

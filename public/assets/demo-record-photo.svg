@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" role="img" aria-label="햇빛이 들어오는 창가와 물 한 잔">
+  <rect width="720" height="480" fill="#efe7d7"/>
+  <rect x="72" y="58" width="320" height="270" rx="10" fill="#fffaf0" stroke="#173f34" stroke-width="10"/>
+  <line x1="232" y1="58" x2="232" y2="328" stroke="#173f34" stroke-width="8"/>
+  <line x1="72" y1="193" x2="392" y2="193" stroke="#173f34" stroke-width="8"/>
+  <circle cx="314" cy="120" r="42" fill="#f2cf5b"/>
+  <path d="M72 272 C150 220 218 290 300 246 C344 222 372 224 392 230 L392 328 L72 328 Z" fill="#b9c8aa"/>
+  <rect x="0" y="350" width="720" height="130" fill="#d7c6aa"/>
+  <ellipse cx="510" cy="370" rx="86" ry="18" fill="#b4a087" opacity=".45"/>
+  <path d="M466 222 L558 222 L546 363 Q512 380 478 363 Z" fill="#dceef0" stroke="#355c5a" stroke-width="7"/>
+  <path d="M478 262 Q512 250 546 262 L541 352 Q512 365 483 352 Z" fill="#9fd0dc" opacity=".78"/>
+  <path d="M440 350 C462 330 477 321 492 319" fill="none" stroke="#6f846e" stroke-width="8" stroke-linecap="round"/>
+  <path d="M598 348 C570 324 552 318 536 318" fill="none" stroke="#6f846e" stroke-width="8" stroke-linecap="round"/>
+</svg>
