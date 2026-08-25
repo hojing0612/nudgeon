@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/home.html" },
+    { "source": "/m", "destination": "/demo-micro-presentation.html" },
+    { "source": "/r", "destination": "/demo-record-presentation.html" },
     { "source": "/rehearsal", "destination": "/index.html" },
     { "source": "/rehearsal/:path*", "destination": "/index.html" }
   ]
