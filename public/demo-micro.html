@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NudgeOn 발표용 마이크로스텝 데모</title>
+</head>
+<body>
+<script>
+(function () {
+  const now = new Date().toISOString();
+  const journey = {
+    version: 1,
+    savedAt: now,
+    screen: 'micro',
+    qi: 0,
+    answers: {
+      barrier: 'going',
+      vision: 'social',
+      nudgeon_help_open: '밖에 나가고 사람과 말하는 게 부담스러워요.'
+    },
+    profile: {
+      level: 3,
+      levelName: '제한적 외출',
+      barrier: 'going',
+      barrierLabel: '외출 부담',
+      vision: 'social',
+      helpRequest: '밖에 나가고 사람과 말하는 게 부담스러워요.'
+    },
+    report: null,
+    group: 'isolation',
+    micro: [],
+    selectedMicroIndex: null,
+    draft: '',
+    nextAction: null,
+    recommendationHistory: [],
+    visited: ['check', 'micro']
+  };
+
+  localStorage.setItem('nudgeon.journey.v1', JSON.stringify(journey));
+  localStorage.setItem('nudgeon.presentation-demo.v1', JSON.stringify({
+    active: true,
+    startedAt: now,
+    firstSet: [
+      { id: 'walk_11', title: '사람 적은 산책 코스 걷기' },
+      { id: 'cafe_1', title: '카페 메뉴 미리 고르기' },
+      { id: 'cafe_5', title: '직원에게 메뉴 이름만 말하기' }
+    ],
+    secondSet: [
+      { id: 'walk_12', title: '공원 벤치 3분 앉기' },
+      { id: 'walk_3', title: '외출 가방에 한 가지 넣기' },
+      { id: 'cafe_6', title: '편의점에서 봉투 요청하기' }
+    ]
+  }));
+
+  location.replace('/home.html?screen=micro&demo=presentation');
+})();
+</script>
+</body>
+</html>
