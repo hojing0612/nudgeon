@@ -117,8 +117,9 @@
     margin-top:0;
   }
 
-  /* Calendar is core to '기록·성장'; do not hide it on mobile. */
-  .app[data-screen="record"] .record-calendar{
+  /* Calendar and support status are core to '기록·성장'; do not hide them on mobile. */
+  .app[data-screen="record"] .record-calendar,
+  .app[data-screen="record"] .support-board{
     display:block;
   }
   .app[data-screen="record"] .record-layout{
@@ -127,7 +128,8 @@
     gap:12px;
   }
   .app[data-screen="record"] .record-calendar,
-  .app[data-screen="record"] .day-record{
+  .app[data-screen="record"] .day-record,
+  .app[data-screen="record"] .support-board{
     width:100%;
   }
 
@@ -141,5 +143,8 @@
   }
   .app[data-screen="record"] .habit-calendar-legend{
     margin-top:10px;
+  }
+  .app[data-screen="record"] .support-board{
+    margin-top:18px;
   }
 }
