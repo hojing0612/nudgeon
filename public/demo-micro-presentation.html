@@ -2,27 +2,64 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NudgeOn 발표용 마이크로스텝</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nudge on — 다시, 세상과 연결되는 작은 신호</title>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/presentation-demo.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,500&family=Gothic+A1:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<script src="/config.js"></script>
+
+<link rel="stylesheet" href="/assets/journey.css?v=20260820-2">
+<link rel="stylesheet" href="/assets/record-responsive-fix.css?v=20260825-1">
 </head>
 <body>
-<div class="demo-shell">
-  <div class="demo-head"><div class="brand">nudge.on</div><div class="badge">PRESENTATION DEMO</div></div>
-  <div class="hero">
-    <aside class="rail"><small>02 · 마이크로스텝</small><h2>지금 가능한 가장 작은 행동부터 시작합니다.</h2><p>발표용 프로필: 제한적 외출 · 외출/대인접촉 부담 · 사회적 연결 희망</p></aside>
-    <main class="main">
-      <h1>오늘 해볼 수 있는 작은 행동</h1>
-      <div class="sub">현재 상태와 목표를 바탕으로 실행 가능한 행동 3개를 제안했습니다.</div>
-      <section class="cards" id="demoCards"></section>
-      <div class="toolbar"><span class="note">원하는 행동이 아니면 같은 난이도대의 다른 행동으로 다시 추천할 수 있어요.</span><button class="swap" id="swapSteps">다른 걸로 바꿔주세요</button></div>
-      <div class="toast" id="demoToast" aria-live="polite"></div>
-    </main>
+
+<div class="app" id="appShell">
+  <header class="site-header">
+    <a class="brand" href="/home.html">nudge.on</a>
+    <nav aria-label="NudgeOn 여정 단계">
+      <ul class="journey" id="journey"></ul>
+    </nav>
+    <a class="home-link" href="/home.html">처음으로</a>
+  </header>
+
+  <div class="mobile-journey-progress" id="mobileJourneyProgress" aria-live="polite"></div>
+
+  <div class="workspace">
+    <aside class="rail" aria-label="현재 단계 창문">
+      <div class="window-wrap">
+      <div class="window-illustration" aria-hidden="true">
+        <div class="window-glow"></div>
+        <div class="window-frame">
+          <div class="window-pane daylight">
+            <div class="window-ground"></div>
+            <div class="window-path"></div>
+            <div class="window-bridge"></div>
+            <div class="window-support support-left"></div>
+            <div class="window-support support-right"></div>
+            <div class="window-sun sun-large"></div>
+            <div class="window-sun signpost-light"></div>
+            <div class="window-signpost"></div>
+            <div class="window-long-path"></div>
+            <div class="curtain l"></div>
+            <div class="curtain r"></div>
+            <div class="window-bar vertical"></div>
+            <div class="window-bar horizontal"></div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </aside>
+
+    <main class="stage"><div class="col" id="stage"></div></main>
   </div>
 </div>
-<script src="/assets/presentation-demo-page.js"></script>
+
+<script src="/assets/connect-stage.js?v=20260817-2"></script>
+<script src="/assets/personalization.js?v=20260817-1"></script>
+<script src="/assets/journey.js?v=20260818-1"></script>
+<script src="/assets/presentation-live.js?v=20260825-1"></script>
 </body>
 </html>
